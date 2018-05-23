@@ -9,5 +9,6 @@ Blender addon to create 3D object from 2D image.
 ![Open images](./image6.png)
 ![Set the images](./image7.png)
 ![Click Create](./image8.png)
-![Excellent!!!](./image9.png)
-
+![Excellent!!!](./image9.png)  
+# Detail
+<https://github.com/rn9dfj3/love2d3d/wiki>
