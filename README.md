@@ -1,10 +1,7 @@
-# Love2D3D
+# What is this?
 Blender addon to create 3D object from 2D image.
+[Let's Try](https://github.com/rn9dfj3/love2d3d/releases) [More Information](https://github.com/rn9dfj3/love2d3d/wiki)
 ![3D model from 2D image](./image1.png)
-# Release
-<https://github.com/rn9dfj3/love2d3d/releases>
-# Detail
-<https://github.com/rn9dfj3/love2d3d/wiki>
 # How to use
 ![Click User Preferense](./image2.png)
 ![Install love2d3d.py](./image3.png)
