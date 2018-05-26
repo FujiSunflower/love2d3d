@@ -1,8 +1,8 @@
 # What is this?
 Blender addon to create 3D object from 2D image.  
 You can use with usual paint tool and build 3D object with Blender!  
-[Download](https://github.com/rn9dfj3/love2d3d/releases)  
-[More information](https://github.com/rn9dfj3/love2d3d/wiki)
+Download is [here](https://github.com/rn9dfj3/love2d3d/releases).  
+More information is [here](https://github.com/rn9dfj3/love2d3d/wiki).
 ![3D model from 2D image](./image1.png)
 # How to use
 ![Click User Preferense](./image2.png)
