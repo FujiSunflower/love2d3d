@@ -181,15 +181,15 @@ class CreateObject(bpy.types.Operator):
                 uvs.extend([u1,u2,u2,u1])
                 backs.append(FRONT)
             if f[RIGHT]:  # Right face
-                vertes.extend([p4,p3,p6,p5])
+                verts.extend([p4,p3,p6,p5])
                 uvs.extend([u4,u3,u3,u4])
                 backs.append(FRONT)
             if f[TOP]:  # Top face
-                vertes.extend([p8,p1,p4,p5])
+                verts.extend([p8,p1,p4,p5])
                 uvs.extend([u1,u1,u4,u4])
                 backs.append(FRONT)
             if f[BOTTOM]:  # Bottom face
-                vertes.extend([p2,p7,p6,p3])
+                verts.extend([p2,p7,p6,p3])
                 uvs.extend([u2,u2,u3,u3])
                 backs.append(FRONT)
         del p1, p2, p3, p4, p5, p6, p7, p8, lens, nei, x, y
