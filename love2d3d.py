@@ -18,32 +18,33 @@ import numpy as np
 bl_info = {
     "name": "Love2D3D",
     "author": "rn9dfj3",
-    "version": (0, 0),
+    "version": (0, 1),
     "blender": (2, 79, 0),
     "location": "3D View > Object Mode > Tool Shelf > Create > Love2D3D",
     "description": "Create 3D object from 2D image",
-    "warning": "Author's initials is r",
+    "warning": "",
     "support": "COMMUNITY",
-    "wiki_url": "https://github.com/rn9dfj3/love2d3d",
-    "tracker_url": "",
+    "wiki_url": "https://github.com/rn9dfj3/love2d3d/wiki",
+    "tracker_url": "https://github.com/rn9dfj3/love2d3d/issues",
     "category": "Add Mesh"
 }
 
-RGBA = 4
-RGB = 3
-R = 0
-G = 1
-B = 2
-A = 3
-X = 0
-Y = 1
-LEFT = 2
-RIGHT = 3
-BOTTOM = 4
-TOP = 5
-QUAD = 4
+RGBA = 4  # Color size per pixels
+RGB = 3  # Color size per pixels
+R = 0  # Index of color
+G = 1  # Index of color
+B = 2  # Index of color
+A = 3  # Index of color
+X = 0  # Index
+Y = 1  # Index
+LEFT = 2  # Index
+RIGHT = 3  # Index
+BOTTOM = 4  # Index
+TOP = 5  # Index
+QUAD = 4  # Vertex Numer of Quad
 FRONT = 0
 BACK = 1
+NAME = "Love2D3D"  # Name of 3D object
 
 
 class CreateObject(bpy.types.Operator):
@@ -54,15 +55,14 @@ class CreateObject(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        image = context.window_manager.love2d3d.image_front
+        image = context.window_manager.love2d3d.image_front  # Image ID
         if image == "":
             return {"CANCELLED"}
-        image = context.blend_data.images[image]
-        resolution = context.window_manager.love2d3d.rough
-        name = "Love2D3D"
-        w, h = image.size
+        image = context.blend_data.images[image]  # Get image
+        resolution = context.window_manager.love2d3d.rough  # Get resolution
+        w, h = image.size  # Image width and height
         all = w * h
-        pixels = image.pixels[:]
+        pixels = image.pixels[:]  # Get slice of color infomation
         fronts = []
         backs = [[True for i in range(w)] for j in range(h)]
         e1 = h-resolution
@@ -71,18 +71,18 @@ class CreateObject(bpy.types.Operator):
         threshold = context.window_manager.love2d3d.threshold
         for y in range(resolution, e1)[::resolution]:
             left = 0 + y * w
-            b2 = RGBA * left
+            b2 = RGBA * left  # Get Left color of image
             for x in range(resolution, e2)[::resolution]:
                 back = False
                 for v in range(resolution):
                     for u in range(resolution):
                         p = (x+u) + (y+v) * w
-                        b1 = RGBA * p
-                        if opacity:
+                        b1 = RGBA * p  # Get each color of image
+                        if opacity:  # Whether opaque or not
                             c1 = pixels[b1+A]
                             c2 = pixels[b2+A]
                             back = back or c1 <= threshold
-                        else:
+                        else:  # Whether same color or not
                             c1 = pixels[b1:b1+RGB]
                             c2 = pixels[b2:b2+RGB]
                             back = back or abs(c1[R] - c2[R]) + \
@@ -103,40 +103,40 @@ class CreateObject(bpy.types.Operator):
             x = fx * resolution
             y = fy * resolution
             left = backs[y][x-resolution]
-            r = backs[y][x+resolution]
-            b = backs[y-resolution][x]
-            t = backs[y+resolution][x]
-            if not backs[y][x] and (left or r or b or t):
-                terms.append((fx, fy))
-            fronts[k] = (fx, fy, left, r, b, t)
+            right = backs[y][x+resolution]
+            back = backs[y-resolution][x]
+            top = backs[y+resolution][x]
+            if not backs[y][x] and (left or right or back or top):
+                terms.append((fx, fy))  # Get edge
+            fronts[k] = (fx, fy, left, right, back, top)  # Insert edge info
         lens = [[0.0 for i in range(w)[::resolution]]
                 for j in range(h)[::resolution]]
         if len(fronts) == 0:
             return {"CANCELLED"}
         sqAll = all ** 2
-        xs = np.array([f[X] for f in fronts])
-        ys = np.array([f[Y] for f in fronts])
+        xs = np.array([f[X] for f in fronts])  # X coordinate of each point
+        ys = np.array([f[Y] for f in fronts])  # Y coordinate of each point
         ls = np.full(len(fronts), sqAll)
         for t in terms:
             ms = np.minimum(ls, np.power(t[X]-xs, 2) + np.power(t[Y] - ys, 2))
-            ls = ms
+            ls = ms  # Watershed algorithm
         ms = np.sqrt(ls) + 1
         m = np.max(ms)
-        ls = np.divide(ms, m)
+        ls = np.divide(ms, m)  # Nomalize
         ms = (np.sin(ls * np.pi * 0.5)+0)
         for k, f in enumerate(fronts):
             fx = f[X]
             fy = f[Y]
-            ls = ms[k]/4.0
+            ls = ms[k]/4.0  # Blur of height for edge
             lens[fy][fx] += ls
             fxi = fx+1
             fyi = fy+1
             lens[fy][fxi] += ls
             lens[fyi][fx] += ls
             lens[fyi][fxi] += ls
-        del fx, fy, fxi, fyi, left
+        del fx, fy, fxi, fyi, left, right, back, top, k, f, ms, ls, m
         verts = []
-        nei = 1  # neighbor
+        nei = 1  # Neighbor
         uvs = []
         uvx = 0 / w
         uvy = 0 / h
@@ -156,7 +156,7 @@ class CreateObject(bpy.types.Operator):
             ru = x2/w
             bu = y1/h
             tu = y2/h
-            # Front
+            # Front face
             p1 = (x1, -lens[yi][x] * depth_front, y2)
             p2 = (x1, -lens[y][x] * depth_front, y1)
             p3 = (x2, -lens[y][xi] * depth_front, y1)
@@ -174,7 +174,7 @@ class CreateObject(bpy.types.Operator):
             uvs.append(u3)
             uvs.append(u4)
             backs.append(FRONT)
-            # Back
+            # Back face
             p5 = (x2, lens[yi][xi] * depth_back, y2)
             p6 = (x2, lens[y][xi] * depth_back, y1)
             p7 = (x1, lens[y][x] * depth_back, y1)
@@ -188,7 +188,7 @@ class CreateObject(bpy.types.Operator):
             uvs.append(u2)
             uvs.append(u1)
             backs.append(BACK)
-            if f[LEFT]:
+            if f[LEFT]:  # Left face
                 verts.append(p8)
                 verts.append(p7)
                 verts.append(p2)
@@ -198,7 +198,7 @@ class CreateObject(bpy.types.Operator):
                 uvs.append(u2)
                 uvs.append(u1)
                 backs.append(FRONT)
-            if f[RIGHT]:
+            if f[RIGHT]:  # Right face
                 verts.append(p4)
                 verts.append(p3)
                 verts.append(p6)
@@ -208,7 +208,7 @@ class CreateObject(bpy.types.Operator):
                 uvs.append(u3)
                 uvs.append(u4)
                 backs.append(FRONT)
-            if f[TOP]:
+            if f[TOP]:  # Top face
                 verts.append(p8)
                 verts.append(p1)
                 verts.append(p4)
@@ -218,7 +218,7 @@ class CreateObject(bpy.types.Operator):
                 uvs.append(u4)
                 uvs.append(u4)
                 backs.append(FRONT)
-            if f[BOTTOM]:
+            if f[BOTTOM]:  # Bottom face
                 verts.append(p2)
                 verts.append(p7)
                 verts.append(p6)
@@ -228,16 +228,17 @@ class CreateObject(bpy.types.Operator):
                 uvs.append(u3)
                 uvs.append(u3)
                 backs.append(FRONT)
-        del p1, p2, p3, p4, lens, nei, x, y
+        del p1, p2, p3, p4, p5, p6, p7, p8, lens, nei, x, y
         del xi, yi, lu, ru, bu, tu, x1, x2, y1, y2
+        del u1, u2, u3, u4
         faces = [(0, 0, 0, 0)] * (len(verts)//QUAD)
         for n, f in enumerate(faces):
             faces[n] = (QUAD * n, QUAD * n + 1, QUAD * n + 2, QUAD * n + 3)
-        msh = bpy.data.meshes.new(name)
+        msh = bpy.data.meshes.new(NAME)
         msh.from_pydata(verts, [], faces)  # Coordinate is Blender Coordinate
         msh.update()
         del verts, faces
-        obj = bpy.data.objects.new(name, msh)
+        obj = bpy.data.objects.new(NAME, msh)  # Create 3D object
         scene = bpy.context.scene
         scene.objects.link(obj)
         bpy.ops.object.select_all(action='DESELECT')
@@ -245,23 +246,24 @@ class CreateObject(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
         obj.select = True
         bpy.context.scene.objects.active = obj
-        obj.location = (-w/2, 0, -h/2)
+        obj.location = (-w/2, 0, -h/2)  # Translate to origin
         bpy.ops.object.transform_apply(location=True)
         scale = context.window_manager.love2d3d.scale
         obj.scale = (scale, scale, scale)
         bpy.ops.object.transform_apply(scale=True)
         channel_name = "uv"
-        msh.uv_textures.new(channel_name)
+        msh.uv_textures.new(channel_name)  # Create UV coordinate
         for idx, dat in enumerate(msh.uv_layers[channel_name].data):
             dat.uv = uvs[idx]
-        # Front
+        del uvs, scale
+        # Crate fornt material
         matf = bpy.data.materials.new('Front')
         tex = bpy.data.textures.new('Front', type='IMAGE')
         tex.image = image
         matf.texture_slots.add()
         matf.texture_slots[0].texture = tex
         obj.data.materials.append(matf)
-        # Back
+        # Crate back material
         matb = bpy.data.materials.new('Back')
         tex = bpy.data.textures.new('Back', type='IMAGE')
         image_back = context.window_manager.love2d3d.image_back
@@ -274,12 +276,12 @@ class CreateObject(bpy.types.Operator):
         matb.texture_slots[0].texture = tex
         obj.data.materials.append(matb)
         for k, f in enumerate(obj.data.polygons):
-            f.material_index = backs[k]
+            f.material_index = backs[k]  # Set back material
         bpy.context.scene.objects.active = obj
-        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='EDIT')  # Remove doubled point
         bpy.ops.mesh.remove_doubles()
         bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.context.scene.objects.active = obj
+        bpy.context.scene.objects.active = obj  # Apply modifiers
         bpy.ops.object.modifier_add(type='SMOOTH')
         smo = obj.modifiers["Smooth"]
         smo.iterations = context.window_manager.love2d3d.smooth
