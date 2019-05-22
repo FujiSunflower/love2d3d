@@ -19,6 +19,7 @@ from bpy_extras.view3d_utils import location_3d_to_region_2d
 import bgl
 import blf
 from mathutils import Vector, Matrix
+import sys
 
 bl_info = {
     "name": "Love2D3D",
@@ -62,7 +63,7 @@ def draw_callback_px(self, context):
     #blf.draw(font_id, "Hello Word " + str(len(self.mouse_path)))
 
     image = context.window_manager.love2d3d.image_front  # Image ID
-    if image == "":
+    if image == "" or image is None:
         return
     self.image = context.blend_data.images[image]  # Get image
 
@@ -161,6 +162,7 @@ class Preview(bpy.types.Operator):
     bl_label = "Preview love2D3D"
     bl_description = "Preview love2D3D"
     bl_options = {'INTERNAL'}
+    _handle = None
 
     def modal(self, context, event):
         area = context.area        
@@ -190,7 +192,15 @@ class Preview(bpy.types.Operator):
 
         #return {'RUNNING_MODAL'}
         return {'PASS_THROUGH'}
-
+    def _handle_remove(self, context):
+        if Preview._handle is not None:
+            bpy.types.SpaceView3D.draw_handler_remove(
+                                                      Preview._handle, 'WINDOW')
+            Preview._handle = None
+    def _handle_add(self, context):
+        if Preview._handle is None:
+            Preview._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px, (self, context), 'WINDOW', 'POST_PIXEL')
+    
     def invoke(self, context, event):
         preview = context.window_manager.love2d3d.preview
         if context.area.type == 'VIEW_3D':
@@ -202,8 +212,10 @@ class Preview(bpy.types.Operator):
                 context.window_manager.love2d3d.preview = True
             else:
                 context.window_manager.love2d3d.preview = False
+                self._handle_remove(context)
                 return {'FINISHED'}
-            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px, args, 'WINDOW', 'POST_PIXEL')
+#            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px, args, 'WINDOW', 'POST_PIXEL')
+            self._handle_add(context)
             #image = context.window_manager.love2d3d.image_front  # Image ID
             #if image == "":
             #    return {"CANCELLED"}
@@ -215,6 +227,7 @@ class Preview(bpy.types.Operator):
             return {'RUNNING_MODAL'}
         else:
             self.report({'WARNING'}, "View3D not found, cannot run operator")
+            self._handle_remove(context)
             return {'CANCELLED'}
 
 
@@ -222,7 +235,7 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
 
     bl_idname = "object.create_love2d3d"
     bl_label = "Create love2D3D"
-    bl_description = "Create 3D object from 2D image."
+    bl_description = "Create 3D object from 2D image"
     bl_options = {'REGISTER', 'UNDO'}
     #view_align = bpy.context.window_manager.love2d3d.view_align
     #view_align = bpy.props.BoolProperty(name="View align",
@@ -419,7 +432,7 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
         #if bpy.ops.object.mode_set.poll():
         #    bpy.ops.object.mode_set(mode='OBJECT')
         #obj.select = True
-        bpy.context.scene.objects.active = obj
+        context.scene.objects.active = obj
 #        obj.location = (-w/2, 0, -h/2)  # Translate to origin
 #        bpy.ops.object.transform_apply(location=True)
 #        scale = context.window_manager.love2d3d.scale
@@ -438,6 +451,7 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
         tex.image = image
         matf.texture_slots.add()
         matf.texture_slots[0].texture = tex
+        matf.use_shadeless = context.window_manager.love2d3d.shadeless
         obj.data.materials.append(matf)
         # Crate back material
         matb = bpy.data.materials.new('Back')
@@ -450,23 +464,31 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
             tex.image = image_back
         matb.texture_slots.add()
         matb.texture_slots[0].texture = tex
+        matb.use_shadeless = context.window_manager.love2d3d.shadeless
         obj.data.materials.append(matb)
         for k, f in enumerate(obj.data.polygons):
             f.material_index = backs[k]  # Set back material
-        bpy.context.scene.objects.active = obj
+        context.scene.objects.active = obj
         bpy.ops.object.mode_set(mode='EDIT')  # Remove doubled point
         bpy.ops.mesh.remove_doubles()
         bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.context.scene.objects.active = obj  # Apply modifiers
+        context.scene.objects.active = obj  # Apply modifiers
         bpy.ops.object.modifier_add(type='SMOOTH')
         smo = obj.modifiers["Smooth"]
         smo.iterations = context.window_manager.love2d3d.smooth
         bpy.ops.object.modifier_add(type='DISPLACE')
         dis = obj.modifiers["Displace"]
         dis.strength = context.window_manager.love2d3d.fat * scale / 0.01
+        dec = None
+        if context.window_manager.love2d3d.decimate:
+            bpy.ops.object.modifier_add(type='DECIMATE')
+            dec = obj.modifiers["Decimate"]
+            dec.ratio = context.window_manager.love2d3d.decimate_ratio
         if context.window_manager.love2d3d.modifier:
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Smooth")
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Displace")
+            if context.window_manager.love2d3d.decimate:
+                bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Decimate")
         obj.select = True
         bpy.ops.object.shade_smooth()
         return {'FINISHED'}
@@ -480,6 +502,1023 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
         #layout.prop(self, "my_string")
         layout.prop(context.window_manager.love2d3d, "view_align")
 
+class CreateArmature(bpy.types.Operator):
+
+    bl_idname = "object.create_love2d3d_aramature"
+    bl_label = "Create Armature"
+    bl_description = "Create Armature to selected objects"
+    bl_options = {'REGISTER', 'UNDO'}
+    BOUND_LEFT = 0
+    BOUND_RIGHT = 1
+    BOUND_BACK = 2
+    BOUND_FRONT = 3
+    BOUND_TOP = 4
+    BOUND_BOTTOM = 5
+    BOUND_CENTER = 6
+    #LATTICE_RESOLUTION = 6.0
+    BRANCH_BOOST = 3.0
+    BRANCH_DISPERSION_RATIO = 0.1
+    BRANCH_LIMIT_HIPS = np.radians(5.0) 
+    BRANCH_LIMIT_CENTER = np.radians(5.0) 
+    BRANCH_LIMIT_ARM = np.radians(30.0)
+    BRANCH_LIMIT_LEG = np.radians(5.0)
+    BRANCH_LIMIT_ANY = np.radians(30.0)
+    BONE_TYPE_ANY = -1
+    BONE_TYPE_BODY = 0
+    BONE_TYPE_HEAD = 1
+    BONE_TYPE_ARM_LEFT = 2
+    BONE_TYPE_ARM_RIGHT = 3
+    BONE_TYPE_LEG_LEFT = 4
+    BONE_TYPE_LEG_RIGHT = 5
+
+    def execute(self, context):
+        return CreateArmature.skinning(context)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(context.window_manager.love2d3d, "armature_resolution")
+
+    def bound_loc(obj):
+        """
+            Getting bounds of object.
+        """
+        bound = obj.bound_box
+        mat = Matrix(obj.matrix_world)    
+        xs = []
+        ys = []
+        zs = []
+        for b in bound:
+            loc = mat * Vector(b)
+            xs.append(loc.x)
+            ys.append(loc.y)
+            zs.append(loc.z)
+        left = max(xs)
+        right = min(xs)
+        back = max(ys)
+        front = min(ys)
+        top = max(zs)
+        bottom = min(zs)
+        center = Vector(((left + right) * 0.5, (back + front) * 0.5, (top  + bottom) * 0.5))
+        return (left, right, back, front, top, bottom, center)
+    def primary_obj(group):
+        """
+            Deciding of primary bone in group.
+        """  
+        max_volume = 0.0
+        max_obj = None
+        for obj in group:
+            b = CreateArmature.bound_loc(obj)
+            le = b[CreateArmature.BOUND_LEFT]
+            ri = b[CreateArmature.BOUND_RIGHT]
+            ba = b[CreateArmature.BOUND_BACK]
+            fr = b[CreateArmature.BOUND_FRONT]
+            to = b[CreateArmature.BOUND_TOP]
+            bo = b[CreateArmature.BOUND_BOTTOM]
+            volume = (le - ri) * (ba - fr) * (to - bo)
+            if max_volume < volume:
+                max_volume = volume
+                max_obj = obj
+        return max_obj
+
+    def _make_group(objects, index, hits):
+        """
+            Recursion call of objects collision.
+        """    
+        current_count = len(hits)
+        b = CreateArmature.bound_loc(objects[index])
+        le = b[CreateArmature.BOUND_LEFT]
+        ri = b[CreateArmature.BOUND_RIGHT]
+        ba = b[CreateArmature.BOUND_BACK]
+        fr = b[CreateArmature.BOUND_FRONT]
+        to = b[CreateArmature.BOUND_TOP]
+        bo = b[CreateArmature.BOUND_BOTTOM]
+        ce = b[CreateArmature.BOUND_CENTER]
+        neighbors = []
+        for k, neighbor in enumerate(objects):
+            if index == k:
+                continue
+            n = CreateArmature.bound_loc(neighbor)
+            n_le = n[CreateArmature.BOUND_LEFT]
+            n_ri = n[CreateArmature.BOUND_RIGHT]
+            n_ba = n[CreateArmature.BOUND_BACK]
+            n_fr = n[CreateArmature.BOUND_FRONT]
+            n_to = n[CreateArmature.BOUND_TOP]
+            n_bo = n[CreateArmature.BOUND_BOTTOM]
+            n_ce = n[CreateArmature.BOUND_CENTER]
+            avoid_x = le < n_ri or n_le < ri
+            avoid_y = ba < n_fr or n_ba < fr
+            avoid_z = to < n_bo or n_to < bo
+            avoid = avoid_x or avoid_y or avoid_z
+            if not avoid: # Hit
+                neighbors.append(k)
+        new_hits = []
+        for neighbor in neighbors:
+            already = False
+            for hit in hits:
+                already = already or neighbor == hit
+            if not already:
+                hits.append(neighbor)
+        if current_count == len(hits):
+            return True
+        for h in hits:
+           g = CreateArmature._make_group(objects, h, hits)
+           if g:
+               return True
+           
+    def make_group(objects):
+        """
+            Grouping of objects.
+        """
+        groups = []
+        alredys = [False for l in objects]
+        for k, object in enumerate(objects):
+            if alredys[k]:
+                continue
+            hits = [k,]
+            CreateArmature._make_group(objects, k, hits)
+            group = []
+            for hit in hits:
+                alredys[hit] = True
+                group.append(objects[hit])
+            groups.append(group)
+        return groups
+    def skinning(context):
+        if len(context.selected_objects) == 0:
+            return {"CANCELLED"}
+        objects = [] # Only Mesh
+        for obj in context.selected_objects:
+            if isinstance(obj.data, bpy.types.Mesh):
+               objects.append(obj)
+        if len(objects) == 0:
+            return {"CANCELLED"}
+        center = Vector((0, 0, 0))
+        sample = 0
+        top = -sys.float_info.max
+        bottom = sys.float_info.max
+    
+        for obj in objects:
+            b = CreateArmature.bound_loc(obj)
+            le = b[CreateArmature.BOUND_LEFT]
+            ri = b[CreateArmature.BOUND_RIGHT]
+            ba = b[CreateArmature.BOUND_BACK]
+            fr = b[CreateArmature.BOUND_FRONT]
+            to = b[CreateArmature.BOUND_TOP]
+            bo = b[CreateArmature.BOUND_BOTTOM]        
+            ce = b[CreateArmature.BOUND_CENTER]
+            center += ce
+            sample += 1
+            top = max(top, to)
+            bottom = min(bottom, bo)
+        center /= sample
+        """
+            Detect body
+        """
+        min_length = sys.float_info.max
+        body = None
+        for obj in objects:
+            b = CreateArmature.bound_loc(obj)
+            ce = b[CreateArmature.BOUND_CENTER]
+            length = (ce - center).length_squared
+            if length < min_length:
+                min_length = length
+                body = obj
+        if body is None:
+            return
+        """
+            Detect others
+        """
+        heads = []
+        right_arms = []    
+        left_arms = []
+        right_legs = []    
+        left_legs = []
+        hips_height = CreateArmature.lerp(bottom, top, 0.333)
+        for obj in objects:
+            body_bound = CreateArmature.bound_loc(body)
+            body_center = body_bound[CreateArmature.BOUND_CENTER]
+            mat = Matrix(body.matrix_world)
+            body_left = body_bound[CreateArmature.BOUND_LEFT]
+            body_right = body_bound[CreateArmature.BOUND_RIGHT]
+            body_radius = (body_left - body_right) * 0.5
+            if body == obj:
+                continue
+            bound = CreateArmature.bound_loc(obj)
+            center = bound[CreateArmature.BOUND_CENTER]
+            radius = abs(center.x - body_center.x)
+            if center.z < hips_height:
+                if center.x < body_center.x:                
+                    right_legs.append(obj)
+                else:
+                    left_legs.append(obj)
+            elif radius < body_radius:
+                heads.append(obj)
+            else:
+                if center.x < body_center.x:
+                    right_arms.append(obj)
+                else:
+                    left_arms.append(obj)
+        """
+            Create armature
+        """
+        bpy.ops.object.armature_add(location=(0.0, 0.0, 0.0), enter_editmode=True)
+        arma = context.active_object
+        context.object.show_x_ray = True
+        """
+            Body bone
+        """
+        bone = arma.data.edit_bones[0]
+        bone.name = "hips"
+        hips, chest = CreateArmature.create_bone(context, arma, bone, body, None, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_BODY)
+        """
+            Leg bones
+        """
+        #for leg in right_legs:
+        #    bone = arma.data.edit_bones.new("leg.R")
+        #    CreateArmature.create_bone(context, arma, bone, leg, hips, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_LEG_RIGHT)
+        #for leg in left_legs:        
+        #    bone = arma.data.edit_bones.new("leg.L")
+        #    CreateArmature.create_bone(context, arma, bone, leg, hips, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_LEG_LEFT)
+        CreateArmature.create_grouped_bone(context, right_legs, arma, hips, CreateArmature.BONE_TYPE_LEG_RIGHT)
+        CreateArmature.create_grouped_bone(context, left_legs, arma, hips, CreateArmature.BONE_TYPE_LEG_LEFT)
+
+        head_groups = CreateArmature.make_group(heads)
+        for group in head_groups:
+            primary_head = CreateArmature.primary_obj(group)
+            bone = arma.data.edit_bones.new("head")
+            primary_bone = CreateArmature.create_head(bone, primary_head, chest)
+            for obj in group:
+                if obj == primary_head:
+                    continue
+                bone = arma.data.edit_bones.new("head")
+                CreateArmature.create_bone(context, arma, bone, obj, primary_bone, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ANY)
+        #for arm in right_arms:
+        #    bone = arma.data.edit_bones.new("arm.R")
+        #    CreateArmature.create_bone(context, arma, bone, arm, chest, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ARM_RIGHT)
+        #groups = CreateArmature.make_group(left_arms)
+        #for group in groups:
+        #    primary = CreateArmature.primary_obj(group)
+        #    bone = arma.data.edit_bones.new("arm.L")
+        #    k, primary_bone = CreateArmature.create_bone(context, arma, bone, primary, chest, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ARM_LEFT)
+        #    for obj in group:
+        #        if obj == primary:
+        #            continue
+        #        bone = arma.data.edit_bones.new("arm.L")
+        #        CreateArmature.create_bone(context, arma, bone, obj, primary_bone, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ARM_LEFT)
+        CreateArmature.create_grouped_bone(context, right_arms, arma, chest, CreateArmature.BONE_TYPE_ARM_RIGHT)
+        CreateArmature.create_grouped_bone(context, left_arms, arma, chest, CreateArmature.BONE_TYPE_ARM_LEFT)
+        for bone in arma.data.edit_bones:
+            bone.select = True        
+        bpy.ops.armature.calculate_roll(type='GLOBAL_POS_Z')    
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+        for obj in objects:
+            obj.select = True
+        context.scene.objects.active = arma
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+        return {'FINISHED'}
+
+    def create_grouped_bone(context, objects, armature, parent, bone_type):
+        groups = CreateArmature.make_group(objects )
+        for group in groups:
+            primary = CreateArmature.primary_obj(group)
+            bone = armature.data.edit_bones.new("bone")
+            k, primary_bone = CreateArmature.create_bone(context, armature, bone, primary, parent, armature.data.edit_bones, bone_type=bone_type)
+            for obj in group:
+                if obj == primary:
+                    continue
+                bone = armature.data.edit_bones.new("bone")
+                CreateArmature.create_bone(context, armature, bone, obj, primary_bone, armature.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ANY)
+                
+    def lerp(start, end , ratio):
+        return start * (1 - ratio) + end * ratio
+
+    def invlerp(value, start, end, r):
+        ratio = (value - start) / (end - start)
+        i = int(ratio * r + 0.5)
+        i = min(max(0, i), r - 1)
+        return i
+
+    def debug_point(context, location, type='PLAIN_AXES'):
+        o = context.blend_data.objects.new("P", None)
+        o.location = location
+        o.scale = (0.02, 0.02, 0.02)
+        context.scene.objects.link(o)
+        o.empty_draw_type = type
+
+    def create_bone(context, armature, bone, obj, chest, bones, bone_type=CreateArmature.BONE_TYPE_BODY):
+        mesh = obj.to_mesh(context.scene, True, 'PREVIEW')
+        b = CreateArmature.bound_loc(obj)
+        le = b[CreateArmature.BOUND_LEFT]
+        ri = b[CreateArmature.BOUND_RIGHT]
+        ba = b[CreateArmature.BOUND_BACK]
+        fr = b[CreateArmature.BOUND_FRONT]
+        to = b[CreateArmature.BOUND_TOP]
+        bo = b[CreateArmature.BOUND_BOTTOM]    
+        if bone_type == CreateArmature.BONE_TYPE_BODY:
+            ce = b[CreateArmature.BOUND_CENTER]
+            body_top = Vector((ce.x, ce.y, to))
+            body_bottom = Vector((ce.x, ce.y, bo))
+        len_x = le - ri
+        len_y = ba - fr
+        len_z = to - bo
+        armature_resolution = context.window_manager.love2d3d.armature_resolution
+        lattice = min(len_x, len_y, len_z) / armature_resolution # latiice unit
+        rx = int(len_x / lattice) # x loop count
+        ry = int(len_y / lattice) # y loop count
+        rz = int(len_z / lattice) # z loop count    
+        rx = max(1, rx)
+        ry = max(1, ry)
+        rz = max(1, rz)    
+        mx = 1.0 / float(rx)
+        my = 1.0 / float(ry)
+        mz = 1.0 / float(rz)
+        start = (0, 0, 0)
+        min_dist = sys.float_info.max
+        if bone_type == CreateArmature.BONE_TYPE_BODY:
+            origin = body_bottom
+        else:
+            origin = Vector(chest.tail)    
+        mat = Matrix(obj.matrix_world)                
+        centers = []
+        """
+            Volume separation process to reduce polygons' calculation.
+        """
+        x0_y0_z0_polygons = []    
+        x1_y0_z0_polygons = []
+        x0_y1_z0_polygons = []
+        x0_y0_z1_polygons = []    
+        x0_y1_z1_polygons = []
+        x1_y0_z1_polygons = []
+        x1_y1_z0_polygons = []
+        x1_y1_z1_polygons = []
+        half_x = CreateArmature.lerp(ri, le, 0.5)
+        half_y = CreateArmature.lerp(fr, ba, 0.5)
+        half_z = CreateArmature.lerp(bo, to, 0.5)
+    
+        for polygon in mesh.polygons: # Nearest polygon
+            center =  mat * Vector(polygon.center)
+            if center.x <= half_x:
+                if center.y <= half_y:
+                    if center.z <= half_z:
+                        x0_y0_z0_polygons.append(polygon)
+                    else:
+                        x0_y0_z1_polygons.append(polygon)
+                else:
+                    if center.z <= half_z:
+                        x0_y1_z0_polygons.append(polygon)                    
+                    else:
+                        x0_y1_z1_polygons.append(polygon)
+            else:
+                if center.y <= half_y:
+                    if center.z <= half_z:
+                        x1_y0_z0_polygons.append(polygon)                    
+                    else:                
+                        x1_y0_z1_polygons.append(polygon)
+                else:
+                    if center.z <= half_z:
+                        x1_y1_z0_polygons.append(polygon)
+                    else:
+                        x1_y1_z1_polygons.append(polygon)
+        """
+            Deciding process of inside points.
+        """
+        for x in range(rx):
+            for y in range(ry):
+                for z in range(rz):        
+                    current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                    current_length = sys.float_info.max
+                    current_height = sys.float_info.max
+                    polygons = []                
+                    if current.x <= half_x:
+                        if current.y <= half_y:
+                            if current.z <= half_z:
+                                polygons.extend(x0_y0_z0_polygons)
+                            else:
+                                polygons.extend(x0_y0_z1_polygons)
+                        else:
+                            if current.z <= half_z:
+                                polygons.extend(x0_y1_z0_polygons)
+                            else:
+                                polygons.extend(x0_y1_z1_polygons)
+                    else:
+                        if current.y <= half_y:
+                            if current.z <= half_z:
+                                polygons.extend(x1_y0_z0_polygons)
+                            else:                
+                                polygons.extend(x1_y0_z1_polygons)
+                        else:
+                            if current.z <= half_z:
+                                polygons.extend(x1_y1_z0_polygons)
+                            else:
+                                polygons.extend(x1_y1_z1_polygons)
+                    min_polygon = None
+                    min_length = sys.float_info.max
+                    for polygon in polygons: # Nearest polygon
+                        center =  mat * Vector(polygon.center)
+                        length = (current - center).length_squared
+                        if length < min_length:
+                            min_polygon = polygon
+                            min_length = length
+                    if min_polygon is None:                    
+                        continue
+                    normal = mat.to_quaternion() * Vector(min_polygon.normal)                
+                    center = mat * (min_polygon.center)
+                    """
+                        Approximation of polygon's region.
+                    """
+                    min_length = np.sqrt(min_polygon.area) * 0.5
+                    vec = current - center
+                    coeff = vec.dot(normal) #Projection to center along Normal
+                    vec -= coeff * normal
+                    length = vec.length_squared
+                    close = coeff
+                    if length < min_length and close < 0:
+                        loc = coeff * normal + center
+                        lx, ly, lz = loc.xyz
+                        u = CreateArmature.invlerp(lx, ri, le, rx)
+                        v = CreateArmature.invlerp(ly, fr, ba, ry)
+                        w = CreateArmature.invlerp(lz, bo, to, rz)
+                        centers.append((u, v, w))
+        """
+            Getting process of the nearest point from origin.
+        """    
+        min_dist = sys.float_info.max
+        start = (0, 0, 0)
+        for c in centers:
+            x, y, z = c         
+            current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+            dist = (current - origin).length_squared
+            if dist < min_dist:
+                min_dist = dist
+                start = (x, y, z)
+        x, y, z = start
+        current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+        bone.head = current
+        """
+            Getting process of the farthest point.
+        """
+        end = start
+        max_length = 0.0
+        for c in centers:
+            x, y, z = c
+            current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+            u, v , w = start
+            s =  Vector((CreateArmature.lerp(ri, le, u * mx), CreateArmature.lerp(fr, ba, v * my), CreateArmature.lerp(bo, to, w * mz)))
+            length = (current - s).length_squared
+            if max_length < length:
+                max_length = length
+                end = (x, y, z)
+        sx, sy, sz = start
+        neck_limit = CreateArmature.BRANCH_LIMIT_HIPS
+        if bone_type == CreateArmature.BONE_TYPE_BODY:
+            min_length = sys.float_info.max
+            min_loc = body_bottom
+            """
+                Getting process of hips point.
+            """        
+            for c in centers:
+                x, y, z = c
+                current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                length = (current - body_bottom).length_squared
+                stem = (body_top - body_bottom)
+                branch0 = (current - body_bottom)
+                length = branch0.length_squared            
+                if stem.length_squared == 0.0 or branch0.length_squared == 0.0:
+                    continue            
+                if length < min_length and stem.angle(branch0) <  neck_limit:
+                    min_length = length
+                    min_loc = current
+            start_loc = Vector((body_bottom.x, body_bottom.y, min_loc.z))
+        else:
+            start_loc = Vector((CreateArmature.lerp(ri, le, sx * mx), CreateArmature.lerp(fr, ba, sy * my), CreateArmature.lerp(bo, to, sz * mz)))
+        bone.head = start_loc
+        ex, ey, ez = end
+        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+            end_loc = body_top
+        else:
+            end_loc = Vector((CreateArmature.lerp(ri, le, ex * mx), CreateArmature.lerp(fr, ba, ey * my), CreateArmature.lerp(bo, to, ez * mz)))
+        """
+            Getting process of center and neck point.
+        """                
+        m = (start_loc + end_loc) * 0.5
+        min_length = sys.float_info.max    
+        center_loc = start_loc
+    
+        n = start_loc.lerp(end_loc, 0.75)
+        neck_length = sys.float_info.max
+        neck_loc = start_loc
+        for center in centers:
+            cx, cy, cz = center
+            current = Vector((CreateArmature.lerp(ri, le, cx * mx), CreateArmature.lerp(fr, ba, cy * my), CreateArmature.lerp(bo, to, cz * mz)))
+            m_length = (current - m).length_squared
+            n_length = (current - n).length_squared
+            if m_length < min_length:
+                center_loc = current
+                min_length = m_length
+            if n_length < neck_length:
+                neck_loc = current
+                neck_length = n_length
+        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+            hips_loc = start_loc.lerp(end_loc, 0.25)
+            bone.tail = hips_loc
+            center_loc = start_loc.lerp(end_loc, 0.5)
+            neck_loc = start_loc.lerp(end_loc, 0.75)
+        else:
+            bone.tail = center_loc        
+            bone.parent = chest        
+        parent = bone
+        start_bone = bone
+    
+        """
+            Create process of primary bones.
+        """                    
+        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+            bone = bones.new("waist")
+            bone.head = hips_loc
+            bone.tail = center_loc
+            bone.parent = parent
+            bone.use_connect = True
+            parent = bone
+            center_bone = bone
+        
+            bone = bones.new("chest")
+            bone.head = center_loc
+            bone.tail = neck_loc
+            bone.parent = parent
+            bone.use_connect = True
+            parent = bone
+            chest_bone = bone
+        
+            bone = bones.new("neck")
+            bone.head = neck_loc
+            bone.tail = end_loc
+            bone.parent = parent
+            bone.use_connect = True    
+            end_bone = bone        
+        else:
+        
+            if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                name = "bone"
+            elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                name = "upper_arm.L"
+            elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                name = "upper_arm.R"
+            elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                name = "thigh.L"
+            elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                name = "thigh.R"
+            else:
+                name = "bone"
+            bone.name = name
+        
+            if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                name = "bone"
+            elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                name = "forearm.L"
+            elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                name = "forearm.R"
+            elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                name = "shin.L"
+            elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                name = "shin.R"
+            else:
+                name = "bone"    
+            bone = bones.new(name)
+            bone.head = center_loc
+            bone.tail = neck_loc
+            bone.parent = parent
+            bone.use_connect = True
+            parent = bone
+            center_bone = bone
+        
+            if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                name = "bone"
+            elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                name = "hand.L"
+            elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                name = "hand.R"
+            elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                name = "foot.L"
+            elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                name = "foot.R"
+            else:
+                name = "bone"
+            bone = bones.new(name)
+            bone.head = neck_loc
+            bone.tail = end_loc
+            bone.parent = parent
+            bone.use_connect = True    
+            end_bone = bone
+        """
+            Caluculate process of volume.
+        """    
+        volume_xs = [0 for x in range(rx)]
+        volume_ys = [0 for y in range(ry)]
+        volume_zs = [0 for z in range(rz)]
+        soft  = 1
+        unit_x = my * mz
+        unit_y = mz * mx
+        unit_z = mx * my
+        for center in centers:
+            x, y, z = center
+            volume_xs[x] += unit_x
+            volume_ys[y] += unit_y
+            volume_zs[z] += unit_z            
+        hit_xs = []
+        hit_ys = []
+        hit_zs = []
+        threshopld = 1.0    
+        ratio = CreateArmature.BRANCH_BOOST
+        soft_x = unit_x * 0.0001 
+        soft_y = unit_y * 0.0001
+        soft_z = unit_z * 0.0001
+        """
+            Differential process of volume in log scale.
+            It tell us like "A's scale is B's scale of x1, x10, x100...".
+        """
+        for x in range(1, rx - 1):
+            vm = volume_xs[x - 1]
+            v0 = volume_xs[x]
+            v1 =  volume_xs[x + 1]
+            sv = np.log2(v0 + soft_x) * ratio
+            ev = np.log2(v1 + soft_x) * ratio
+            mv = np.log2(vm + soft_x) * ratio        
+            diff = (2 * sv - ev - mv) ** 2
+            if threshopld <= diff:
+                hit_xs.append(x)
+        for y in range(1, ry - 1):
+            vm = volume_ys[y - 1]        
+            v0 = volume_ys[y]
+            v1 = volume_ys[y + 1]
+            sv = np.log2(v0 + soft_y) * ratio
+            ev = np.log2(v1 + soft_y) * ratio
+            mv = np.log2(vm + soft_y) * ratio        
+            diff = (2 * sv - ev - mv) ** 2
+            if threshopld <= diff:
+                hit_ys.append(y)
+        for z in range(1, rz - 1):
+            vm = volume_zs[z - 1]        
+            v0 = volume_zs[z]
+            v1 = volume_zs[z + 1]
+            sv = np.log2(v0 + soft_z) * ratio
+            ev = np.log2(v1 + soft_z) * ratio
+            mv = np.log2(vm + soft_z) * ratio        
+            diff = (2 * sv - ev - mv) ** 2
+            if threshopld <= diff:
+                hit_zs.append(z)
+        """
+            Diciding process of branch point like fingers.
+        """
+        hits = []
+        average = Vector((0, 0, 0))
+        dispersion = 0.0    
+        sum = 0
+        center_limit = CreateArmature.BRANCH_LIMIT_CENTER
+        for x in hit_xs:
+            for y in hit_ys:
+                for z in hit_zs:
+                    for center in centers:
+                        u, v, w = center
+                        current = Vector((CreateArmature.lerp(ri, le, u * mx), CreateArmature.lerp(fr, ba, v * my), CreateArmature.lerp(bo, to, w * mz)))
+                        free = True
+                        """
+                            Avoiding process of body's neck.
+                            It is because bad points for shoulders.
+                        """
+                        if bone_type == CreateArmature.BONE_TYPE_BODY:                        
+                            proj0 = Vector((current.x, body_bottom.y, current.z))
+                            proj1 = Vector((current.x, body_top.y, current.z))                        
+                            branch0 = (proj0 - body_bottom)
+                            branch1 = (proj1 - body_top)
+                            stem = (body_top - body_bottom)
+                            if branch0.length_squared == 0.0 or branch1.length_squared == 0.0:
+                                continue
+                            angle0 = stem.angle(branch0)
+                            angle1 = stem.angle(branch1)                        
+                            free = center_limit < angle0 and center_limit < angle1
+                        if x == u and y == v and z == w and free:
+                            hits.append((u, v, w))
+                            average += current
+                            dispersion += current.length_squared
+                            sum += 1
+        """
+            Gathering process of branch points.
+        """    
+        if sum == 0:
+            return start_bone, end_bone
+        average /= sum
+        dispersion /= sum
+        dispersion -= average.length_squared
+        dispersion *= CreateArmature.BRANCH_DISPERSION_RATIO
+        bound = le, ri, ba, fr, to, bo
+        m = mx, my, mz
+        gathers = CreateArmature.gather_point(hits, bound, m, dispersion)    
+        possible_joints = []
+        joints = []
+        """
+            Averaging process of gatherd branch points.
+        """
+        for gather in gathers:
+            average = Vector((0, 0, 0))
+            sum = 0
+            for point in gather:
+                px, py, pz = hits[point]
+                p_loc = Vector((CreateArmature.lerp(ri, le, px * mx), CreateArmature.lerp(fr, ba, py * my), CreateArmature.lerp(bo, to, pz * mz)))
+                average += p_loc
+                sum += 1
+            if sum == 0:
+                continue
+            average /= sum
+            joints.append(average)
+        """
+            Calculating and creating process of bones.
+        """
+        def create_joint(centers, hinges, bounds, rs, ms, dispersion, name, parent, bone_type):
+            le, ri, ba, fr, to, bo = bounds
+            rx, ry, rz = rs
+            ms = (mx, my, mz)
+            tips = [(CreateArmature.invlerp(hinge[1].x, ri, le, rx), CreateArmature.invlerp(hinge[1].y, fr, ba, ry), CreateArmature.invlerp(hinge[1].z, bo, to, rz)) for hinge in hinges]
+            gathers = CreateArmature.gather_point(tips, bounds, ms, dispersion)
+            """
+                Averaging process of gathered tips.
+            """        
+            averages = [Vector((0,0,0)) for g in gathers]
+            for k, gather in enumerate(gathers):
+                average = Vector((0, 0, 0))
+                sum = 0
+                for point in gather:
+                    px, py, pz = tips[point]
+                    p_loc = Vector((CreateArmature.lerp(ri, le, px * mx), CreateArmature.lerp(fr, ba, py * my), CreateArmature.lerp(bo, to, pz * mz)))
+                    average += p_loc
+                    sum += 1
+                average /= sum
+                averages[k] = average
+            groups = [[] for a in averages]
+            for hinge in hinges:
+                joint, tip = hinge
+                min_length = sys.float_info.max
+                min_index = 0
+                for k, average in enumerate(averages):
+                    length = (average - tip).length_squared
+                    if length < min_length:
+                        min_length = length
+                        min_index = k
+                groups[min_index].append(joint)
+            for k, tip in enumerate(averages):
+                max_length = -sys.float_info.max
+                max_joint = tip
+                group = groups[k]
+                if len(group) == 0:
+                    continue
+                for joint in group:
+                    length = (joint - tip).length_squared
+                    if max_length < length:
+                        max_length = length
+                        max_joint = joint
+                e = max_joint.lerp(tip, 0.5)
+                n = max_joint.lerp(tip, 0.75)
+                min_e = Vector((0, 0, 0))
+                min_n = Vector((0, 0, 0))
+                min_e_length = sys.float_info.max
+                min_n_length = sys.float_info.max
+                for center in centers:
+                    x, y, z = center
+                    current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                    e_length = (current - e).length_squared
+                    n_length = (current - n).length_squared
+                    if e_length < min_e_length:
+                        min_e_length = e_length
+                        min_e = current
+                    if n_length < min_n_length:
+                        min_n_length = n_length
+                        min_n = current
+                vec = (max_joint - min_e).normalized()
+                coeff = (parent.tail - max_joint).dot(vec)
+                s = vec * coeff * 0.5 + max_joint
+                min_s = Vector((0, 0, 0))
+                min_s_length = sys.float_info.max
+                for center in centers:
+                    x, y, z = center
+                    current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                    s_length = (current - s).length_squared            
+                    if s_length < min_s_length:
+                        min_s_length = s_length
+                        min_s = current
+                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                    name = "bone"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                    name = "shoulder.L"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                    name = "shoulder.R"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                    name = "pelvis.L"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                    name = "pelvis.R"                
+                else:
+                    name = "bone"
+                
+                bone = bones.new(name)
+                bone.head = min_s
+                bone.tail = max_joint
+                bone.parent = parent
+                p = bone
+                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                    name = "bone"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                    name = "upper_arm.L"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                    name = "upper_arm.R"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                    name = "thigh.L"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                    name = "thigh.R"
+                else:
+                    name = "bone"
+            
+                bone = bones.new(name)
+                bone.head = max_joint
+                bone.tail = min_e
+                bone.parent = p
+                p = bone
+                bone.use_connect = True
+                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                    name = "bone"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                    name = "forearm.L"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                    name = "forearm.R"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                    name = "shin.L"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                    name = "shin.R"
+                else:
+                    name = "bone"
+            
+                bone = bones.new(name)
+                bone.head = min_e
+                bone.tail = min_n
+                bone.parent = p
+                bone.use_connect = True                
+                p = bone
+                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                    name = "bone"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                    name = "hand.L"
+                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                    name = "hand.R"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                    name = "foot.L"
+                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                    name = "foot.R"
+                else:
+                    name = "bone"
+                bone = bones.new(name)
+                bone.head = min_n
+                bone.tail = tip
+                bone.parent = p
+                bone.use_connect = True    
+        """
+            Getting process of tips like fingers's tip.
+        """                
+        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+            right_arms = []
+            left_arms = []
+            right_legs = []
+            left_legs = []
+            for joint in joints:
+                arm = hips_loc.z < joint.z
+                left = 0 < joint.x - center_loc.x
+                if arm:
+                    stem = neck_loc - center_loc
+                    branch = joint - center_loc
+                else:
+                    stem = start_loc - center_loc
+                    branch = joint - center_loc
+                if stem.length_squared == 0.0 or branch.length_squared == 0.0:
+                    continue
+                branch_normal = branch.normalized()
+                angle = stem.angle(branch)
+                limit_angle = CreateArmature.BRANCH_LIMIT_ARM if arm else CreateArmature.BRANCH_LIMIT_LEG
+                if limit_angle < angle:
+                    max_close = -sys.float_info.max
+                    max_loc = joint
+                    for center in centers:
+                        x, y, z = center
+                        current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                        if arm:
+                            height = hips_loc.z < current.z
+                        else:
+                            height = current.z < hips_loc.z
+                        close =  (current - joint).dot(branch_normal)
+                        if height and max_close < close:
+                            max_close = close
+                            max_loc = current
+                    if arm:
+                        if left:
+                            left_arms.append((joint, max_loc))                        
+                        else:
+                            right_arms.append((joint, max_loc))
+                    else:
+                        if left:
+                            left_legs.append((joint, max_loc))                        
+                        else:
+                            right_legs.append((joint, max_loc))                        
+            bounds = (le, ri, ba, fr, to, bo)
+            ms = (mx, my, mz)
+            rs = (rx, ry, rz)
+            create_joint(centers, left_arms, bounds, rs, ms, dispersion, "Arm.L", chest_bone, CreateArmature.BONE_TYPE_ARM_LEFT)
+            create_joint(centers, right_arms, bounds, rs, ms, dispersion, "Arm.R", chest_bone, CreateArmature.BONE_TYPE_ARM_RIGHT)
+            create_joint(centers, left_legs, bounds, rs, ms, dispersion, "Leg.L", start_bone, CreateArmature.BONE_TYPE_LEG_LEFT)
+            create_joint(centers, right_legs, bounds, rs, ms, dispersion, "Leg.R", start_bone, CreateArmature.BONE_TYPE_LEG_RIGHT)        
+        else:
+            tips = []
+            for joint in joints:
+                stem = end_loc - neck_loc
+                branch = joint - neck_loc
+                if stem.length_squared == 0.0 or branch.length_squared == 0.0:
+                    continue
+                branch_normal = branch.normalized()
+                angle = stem.angle(branch)
+                limit_angle = CreateArmature.BRANCH_LIMIT_ANY
+                close = stem.dot(branch)
+                if 0 < close and limit_angle < angle:
+                    max_close = -sys.float_info.max
+                    max_loc = joint
+                    for center in centers:
+                        x, y, z = center
+                        current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                        close =  (current - joint).dot(branch_normal)
+                        if max_close < close:
+                            max_close = close
+                            max_loc = current
+                    tips.append((joint, max_loc))                        
+            bounds = (le, ri, ba, fr, to, bo)
+            ms = (mx, my, mz)
+            rs = (rx, ry, rz)
+            create_joint(centers, tips, bounds, rs, ms, dispersion, name, center_bone, CreateArmature.BONE_TYPE_ANY)
+        """
+            Finish process.
+        """
+        bpy.data.meshes.remove(mesh)
+        return start_bone, end_bone
+
+    def gather_point(points, bound, m, dispersion):
+        """
+            Gathering points to gathers.
+        """
+        gathers = []
+        alreadys = [False for p in points]
+        for k, point in enumerate(points):            
+            if alreadys[k]:
+                continue
+            hits = [k,]
+            CreateArmature._gather_point(k, points, bound, m, dispersion, hits)
+            gathers.append(hits)
+            for hit in hits:
+                alreadys[hit] = True
+        return gathers
+
+    def _gather_point(index, points, bound, m, dispersion, hits):
+        """
+            Recursion call of points' collision.
+        """
+        point = points[index]
+        current_count = len(hits)
+        px, py, pz = point
+        le, ri, ba, fr, to, bo = bound
+        mx, my, mz = m
+        p_loc = Vector((CreateArmature.lerp(ri, le, px * mx), CreateArmature.lerp(fr, ba, py * my), CreateArmature.lerp(bo, to, pz * mz)))
+        neighbors = []
+        for k, neighbor in enumerate(points):
+            if neighbor == point:
+                continue
+            nx, ny, nz = neighbor
+            n_loc = Vector((CreateArmature.lerp(ri, le, nx * mx), CreateArmature.lerp(fr, ba, ny * my), CreateArmature.lerp(bo, to, nz * mz)))
+            length = (p_loc - n_loc).length_squared
+            if length < dispersion:
+                neighbors.append(k)
+        for neighbor in neighbors:
+            already = False
+            for hit in hits:
+                already = already or hit == neighbor
+            if not already:
+                hits.append(neighbor)
+        if current_count == len(hits):
+            return True
+        for neighbor in neighbors:
+            g = CreateArmature._gather_point(neighbor, points, bound, m, dispersion, hits)
+            if g:
+                return True
+    def create_head(bone, obj, chest):
+        b = CreateArmature.bound_loc(obj)
+        p = b[CreateArmature.BOUND_TOP]
+        n = b[CreateArmature.BOUND_BOTTOM]
+        bone.head = Vector((obj.location.x, obj.location.y, n))
+        bone.tail = Vector((obj.location.x, obj.location.y, p))
+        bone.parent = chest
+        return bone
+
+        
+        
 class VIEW3D_PT_love2d3d(bpy.types.Panel):
 
     bl_label = "Love2D3D"
@@ -524,8 +1563,19 @@ class VIEW3D_PT_love2d3d(bpy.types.Panel):
         col.prop(context.window_manager.love2d3d, "fat")
         layout.separator()
         col = layout.column(align=True)
+        col.label(text="Decimate", icon="MOD_DECIM")        
+        col.prop(context.window_manager.love2d3d, "decimate")
+        col.prop(context.window_manager.love2d3d, "decimate_ratio")
+        layout.separator()
+        col = layout.column(align=True)
+        col.label(text="Armature", icon="ARMATURE_DATA")        
+        col.operator(CreateArmature.bl_idname, text="Create")
+        col.prop(context.window_manager.love2d3d, "armature_resolution")
+        layout.separator()
+        col = layout.column(align=True)
         col.label(text="Option", icon="SCRIPTWIN")
         col.prop(context.window_manager.love2d3d, "modifier")
+        col.prop(context.window_manager.love2d3d, "shadeless")
 
 
 class Love2D3DProps(bpy.types.PropertyGroup):
@@ -571,8 +1621,18 @@ class Love2D3DProps(bpy.types.PropertyGroup):
     preview = bpy.props.BoolProperty(name="Preview",
                                      description="Use preview for mesh now",
                                      options={'HIDDEN'})
-
-
+    decimate = bpy.props.BoolProperty(name="Decimate",
+                                      description="Use decimate modifier to object",
+                                      default=False)
+    decimate_ratio = bpy.props.FloatProperty(name="Ratio",
+                                  description="Decimate ratio",
+                                  default=0.2, min=0.0, max=1.0, subtype="FACTOR")
+    shadeless = bpy.props.BoolProperty(name="Shadeless",
+                                      description="Use shadeless in object's material",
+                                      default=True)
+    armature_resolution = bpy.props.FloatProperty(name="Resolution",
+                                          description="Resolution of armature calculation",
+                                          min=1, default=8.0)
 def register():
     bpy.utils.register_module(__name__)
     bpy.types.WindowManager.love2d3d \
