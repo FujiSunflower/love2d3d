@@ -24,7 +24,7 @@ import sys
 bl_info = {
     "name": "Love2D3D",
     "author": "Fuji Sunflower",
-    "version": (1, 0),
+    "version": (1, 2),
     "blender": (2, 79, 0),
     "location": "3D View > Object Mode > Tool Shelf > Create > Love2D3D",
     "description": "Create 3D object from 2D image",
@@ -51,6 +51,28 @@ QUAD = 4  # Vertex Numer of Quad
 FRONT = 0
 BACK = 1
 NAME = "Love2D3D"  # Name of 3D object
+BOUND_LEFT = 0
+BOUND_RIGHT = 1
+BOUND_BACK = 2
+BOUND_FRONT = 3
+BOUND_TOP = 4
+BOUND_BOTTOM = 5
+BOUND_CENTER = 6
+#LATTICE_RESOLUTION = 6.0
+BRANCH_BOOST = 3.0
+BRANCH_DISPERSION_RATIO = 0.1
+BRANCH_LIMIT_HIPS = np.radians(5.0) 
+BRANCH_LIMIT_CENTER = np.radians(5.0) 
+BRANCH_LIMIT_ARM = np.radians(30.0)
+BRANCH_LIMIT_LEG = np.radians(5.0)
+BRANCH_LIMIT_ANY = np.radians(30.0)
+BONE_TYPE_ANY = -1
+BONE_TYPE_BODY = 0
+BONE_TYPE_HEAD = 1
+BONE_TYPE_ARM_LEFT = 2
+BONE_TYPE_ARM_RIGHT = 3
+BONE_TYPE_LEG_LEFT = 4
+BONE_TYPE_LEG_RIGHT = 5
 
 def draw_callback_px(self, context):
     #print("mouse points", len(self.mouse_path))
@@ -508,37 +530,38 @@ class CreateArmature(bpy.types.Operator):
     bl_label = "Create Armature"
     bl_description = "Create Armature to selected objects"
     bl_options = {'REGISTER', 'UNDO'}
-    BOUND_LEFT = 0
-    BOUND_RIGHT = 1
-    BOUND_BACK = 2
-    BOUND_FRONT = 3
-    BOUND_TOP = 4
-    BOUND_BOTTOM = 5
-    BOUND_CENTER = 6
-    #LATTICE_RESOLUTION = 6.0
-    BRANCH_BOOST = 3.0
-    BRANCH_DISPERSION_RATIO = 0.1
-    BRANCH_LIMIT_HIPS = np.radians(5.0) 
-    BRANCH_LIMIT_CENTER = np.radians(5.0) 
-    BRANCH_LIMIT_ARM = np.radians(30.0)
-    BRANCH_LIMIT_LEG = np.radians(5.0)
-    BRANCH_LIMIT_ANY = np.radians(30.0)
-    BONE_TYPE_ANY = -1
-    BONE_TYPE_BODY = 0
-    BONE_TYPE_HEAD = 1
-    BONE_TYPE_ARM_LEFT = 2
-    BONE_TYPE_ARM_RIGHT = 3
-    BONE_TYPE_LEG_LEFT = 4
-    BONE_TYPE_LEG_RIGHT = 5
-
+    
+    #BOUND_LEFT = 0
+    #BOUND_RIGHT = 1
+    #BOUND_BACK = 2
+    #BOUND_FRONT = 3
+    #BOUND_TOP = 4
+    #BOUND_BOTTOM = 5
+    #BOUND_CENTER = 6
+    ##LATTICE_RESOLUTION = 6.0
+    #BRANCH_BOOST = 3.0
+    #BRANCH_DISPERSION_RATIO = 0.1
+    #BRANCH_LIMIT_HIPS = np.radians(5.0) 
+    #BRANCH_LIMIT_CENTER = np.radians(5.0) 
+    #BRANCH_LIMIT_ARM = np.radians(30.0)
+    #BRANCH_LIMIT_LEG = np.radians(5.0)
+    #BRANCH_LIMIT_ANY = np.radians(30.0)
+    #BONE_TYPE_ANY = -1
+    #BONE_TYPE_BODY = 0
+    #BONE_TYPE_HEAD = 1
+    #BONE_TYPE_ARM_LEFT = 2
+    #BONE_TYPE_ARM_RIGHT = 3
+    #BONE_TYPE_LEG_LEFT = 4
+    #BONE_TYPE_LEG_RIGHT = 5
+    
     def execute(self, context):
-        return CreateArmature.skinning(context)
+        return self.skinning(context)
 
     def draw(self, context):
         layout = self.layout
         layout.prop(context.window_manager.love2d3d, "armature_resolution")
 
-    def bound_loc(obj):
+    def bound_loc(self, obj):
         """
             Getting bounds of object.
         """
@@ -560,51 +583,51 @@ class CreateArmature(bpy.types.Operator):
         bottom = min(zs)
         center = Vector(((left + right) * 0.5, (back + front) * 0.5, (top  + bottom) * 0.5))
         return (left, right, back, front, top, bottom, center)
-    def primary_obj(group):
+    def primary_obj(self, group):
         """
             Deciding of primary bone in group.
         """  
         max_volume = 0.0
         max_obj = None
         for obj in group:
-            b = CreateArmature.bound_loc(obj)
-            le = b[CreateArmature.BOUND_LEFT]
-            ri = b[CreateArmature.BOUND_RIGHT]
-            ba = b[CreateArmature.BOUND_BACK]
-            fr = b[CreateArmature.BOUND_FRONT]
-            to = b[CreateArmature.BOUND_TOP]
-            bo = b[CreateArmature.BOUND_BOTTOM]
+            b = self.bound_loc(obj)
+            le = b[BOUND_LEFT]
+            ri = b[BOUND_RIGHT]
+            ba = b[BOUND_BACK]
+            fr = b[BOUND_FRONT]
+            to = b[BOUND_TOP]
+            bo = b[BOUND_BOTTOM]
             volume = (le - ri) * (ba - fr) * (to - bo)
             if max_volume < volume:
                 max_volume = volume
                 max_obj = obj
         return max_obj
 
-    def _make_group(objects, index, hits):
+    def _make_group(self, objects, index, hits):
         """
             Recursion call of objects collision.
         """    
         current_count = len(hits)
-        b = CreateArmature.bound_loc(objects[index])
-        le = b[CreateArmature.BOUND_LEFT]
-        ri = b[CreateArmature.BOUND_RIGHT]
-        ba = b[CreateArmature.BOUND_BACK]
-        fr = b[CreateArmature.BOUND_FRONT]
-        to = b[CreateArmature.BOUND_TOP]
-        bo = b[CreateArmature.BOUND_BOTTOM]
-        ce = b[CreateArmature.BOUND_CENTER]
+        b = self.bound_loc(objects[index])
+        le = b[BOUND_LEFT]
+        ri = b[BOUND_RIGHT]
+        ba = b[BOUND_BACK]
+        fr = b[BOUND_FRONT]
+        to = b[BOUND_TOP]
+        bo = b[BOUND_BOTTOM]
+        ce = b[BOUND_CENTER]
         neighbors = []
         for k, neighbor in enumerate(objects):
             if index == k:
                 continue
-            n = CreateArmature.bound_loc(neighbor)
-            n_le = n[CreateArmature.BOUND_LEFT]
-            n_ri = n[CreateArmature.BOUND_RIGHT]
-            n_ba = n[CreateArmature.BOUND_BACK]
-            n_fr = n[CreateArmature.BOUND_FRONT]
-            n_to = n[CreateArmature.BOUND_TOP]
-            n_bo = n[CreateArmature.BOUND_BOTTOM]
-            n_ce = n[CreateArmature.BOUND_CENTER]
+            n = self.bound_loc(neighbor)
+            n_le = n[BOUND_LEFT]
+            n_ri = n[BOUND_RIGHT]
+            n_ba = n[BOUND_BACK]
+            n_fr = n[BOUND_FRONT]
+            n_to = n[BOUND_TOP]
+            n_bo = n[BOUND_BOTTOM]
+            n_ce = n[BOUND_CENTER]
             avoid_x = le < n_ri or n_le < ri
             avoid_y = ba < n_fr or n_ba < fr
             avoid_z = to < n_bo or n_to < bo
@@ -621,11 +644,11 @@ class CreateArmature(bpy.types.Operator):
         if current_count == len(hits):
             return True
         for h in hits:
-           g = CreateArmature._make_group(objects, h, hits)
+           g = self._make_group(objects, h, hits)
            if g:
                return True
            
-    def make_group(objects):
+    def make_group(self, objects):
         """
             Grouping of objects.
         """
@@ -635,14 +658,14 @@ class CreateArmature(bpy.types.Operator):
             if alredys[k]:
                 continue
             hits = [k,]
-            CreateArmature._make_group(objects, k, hits)
+            self._make_group(objects, k, hits)
             group = []
             for hit in hits:
                 alredys[hit] = True
                 group.append(objects[hit])
             groups.append(group)
         return groups
-    def skinning(context):
+    def skinning(self, context):
         if len(context.selected_objects) == 0:
             return {"CANCELLED"}
         objects = [] # Only Mesh
@@ -657,14 +680,14 @@ class CreateArmature(bpy.types.Operator):
         bottom = sys.float_info.max
     
         for obj in objects:
-            b = CreateArmature.bound_loc(obj)
-            le = b[CreateArmature.BOUND_LEFT]
-            ri = b[CreateArmature.BOUND_RIGHT]
-            ba = b[CreateArmature.BOUND_BACK]
-            fr = b[CreateArmature.BOUND_FRONT]
-            to = b[CreateArmature.BOUND_TOP]
-            bo = b[CreateArmature.BOUND_BOTTOM]        
-            ce = b[CreateArmature.BOUND_CENTER]
+            b = self.bound_loc(obj)
+            le = b[BOUND_LEFT]
+            ri = b[BOUND_RIGHT]
+            ba = b[BOUND_BACK]
+            fr = b[BOUND_FRONT]
+            to = b[BOUND_TOP]
+            bo = b[BOUND_BOTTOM]        
+            ce = b[BOUND_CENTER]
             center += ce
             sample += 1
             top = max(top, to)
@@ -676,8 +699,8 @@ class CreateArmature(bpy.types.Operator):
         min_length = sys.float_info.max
         body = None
         for obj in objects:
-            b = CreateArmature.bound_loc(obj)
-            ce = b[CreateArmature.BOUND_CENTER]
+            b = self.bound_loc(obj)
+            ce = b[BOUND_CENTER]
             length = (ce - center).length_squared
             if length < min_length:
                 min_length = length
@@ -692,18 +715,18 @@ class CreateArmature(bpy.types.Operator):
         left_arms = []
         right_legs = []    
         left_legs = []
-        hips_height = CreateArmature.lerp(bottom, top, 0.333)
+        hips_height = self.lerp(bottom, top, 0.333)
         for obj in objects:
-            body_bound = CreateArmature.bound_loc(body)
-            body_center = body_bound[CreateArmature.BOUND_CENTER]
+            body_bound = self.bound_loc(body)
+            body_center = body_bound[BOUND_CENTER]
             mat = Matrix(body.matrix_world)
-            body_left = body_bound[CreateArmature.BOUND_LEFT]
-            body_right = body_bound[CreateArmature.BOUND_RIGHT]
+            body_left = body_bound[BOUND_LEFT]
+            body_right = body_bound[BOUND_RIGHT]
             body_radius = (body_left - body_right) * 0.5
             if body == obj:
                 continue
-            bound = CreateArmature.bound_loc(obj)
-            center = bound[CreateArmature.BOUND_CENTER]
+            bound = self.bound_loc(obj)
+            center = bound[BOUND_CENTER]
             radius = abs(center.x - body_center.x)
             if center.z < hips_height:
                 if center.x < body_center.x:                
@@ -728,7 +751,7 @@ class CreateArmature(bpy.types.Operator):
         """
         bone = arma.data.edit_bones[0]
         bone.name = "hips"
-        hips, chest = CreateArmature.create_bone(context, arma, bone, body, None, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_BODY)
+        hips, chest = self.create_bone(context, arma, bone, body, None, arma.data.edit_bones, bone_type=BONE_TYPE_BODY)
         """
             Leg bones
         """
@@ -738,19 +761,19 @@ class CreateArmature(bpy.types.Operator):
         #for leg in left_legs:        
         #    bone = arma.data.edit_bones.new("leg.L")
         #    CreateArmature.create_bone(context, arma, bone, leg, hips, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_LEG_LEFT)
-        CreateArmature.create_grouped_bone(context, right_legs, arma, hips, CreateArmature.BONE_TYPE_LEG_RIGHT)
-        CreateArmature.create_grouped_bone(context, left_legs, arma, hips, CreateArmature.BONE_TYPE_LEG_LEFT)
+        self.create_grouped_bone(context, right_legs, arma, hips, BONE_TYPE_LEG_RIGHT)
+        self.create_grouped_bone(context, left_legs, arma, hips, BONE_TYPE_LEG_LEFT)
 
-        head_groups = CreateArmature.make_group(heads)
+        head_groups = self.make_group(heads)
         for group in head_groups:
-            primary_head = CreateArmature.primary_obj(group)
+            primary_head = self.primary_obj(group)
             bone = arma.data.edit_bones.new("head")
-            primary_bone = CreateArmature.create_head(bone, primary_head, chest)
+            primary_bone = self.create_head(bone, primary_head, chest)
             for obj in group:
                 if obj == primary_head:
                     continue
                 bone = arma.data.edit_bones.new("head")
-                CreateArmature.create_bone(context, arma, bone, obj, primary_bone, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ANY)
+                self.create_bone(context, arma, bone, obj, primary_bone, arma.data.edit_bones, bone_type=BONE_TYPE_ANY)
         #for arm in right_arms:
         #    bone = arma.data.edit_bones.new("arm.R")
         #    CreateArmature.create_bone(context, arma, bone, arm, chest, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ARM_RIGHT)
@@ -764,8 +787,8 @@ class CreateArmature(bpy.types.Operator):
         #            continue
         #        bone = arma.data.edit_bones.new("arm.L")
         #        CreateArmature.create_bone(context, arma, bone, obj, primary_bone, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ARM_LEFT)
-        CreateArmature.create_grouped_bone(context, right_arms, arma, chest, CreateArmature.BONE_TYPE_ARM_RIGHT)
-        CreateArmature.create_grouped_bone(context, left_arms, arma, chest, CreateArmature.BONE_TYPE_ARM_LEFT)
+        self.create_grouped_bone(context, right_arms, arma, chest, BONE_TYPE_ARM_RIGHT)
+        self.create_grouped_bone(context, left_arms, arma, chest, BONE_TYPE_ARM_LEFT)
         for bone in arma.data.edit_bones:
             bone.select = True        
         bpy.ops.armature.calculate_roll(type='GLOBAL_POS_Z')    
@@ -776,45 +799,45 @@ class CreateArmature(bpy.types.Operator):
         bpy.ops.object.parent_set(type='ARMATURE_AUTO')
         return {'FINISHED'}
 
-    def create_grouped_bone(context, objects, armature, parent, bone_type):
-        groups = CreateArmature.make_group(objects )
+    def create_grouped_bone(self, context, objects, armature, parent, bone_type):
+        groups = self.make_group(objects)
         for group in groups:
-            primary = CreateArmature.primary_obj(group)
+            primary = self.primary_obj(group)
             bone = armature.data.edit_bones.new("bone")
-            k, primary_bone = CreateArmature.create_bone(context, armature, bone, primary, parent, armature.data.edit_bones, bone_type=bone_type)
+            k, primary_bone = self.create_bone(context, armature, bone, primary, parent, armature.data.edit_bones, bone_type=bone_type)
             for obj in group:
                 if obj == primary:
                     continue
                 bone = armature.data.edit_bones.new("bone")
-                CreateArmature.create_bone(context, armature, bone, obj, primary_bone, armature.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ANY)
+                self.create_bone(context, armature, bone, obj, primary_bone, armature.data.edit_bones, bone_type=BONE_TYPE_ANY)
                 
-    def lerp(start, end , ratio):
+    def lerp(self, start, end , ratio):
         return start * (1 - ratio) + end * ratio
 
-    def invlerp(value, start, end, r):
+    def invlerp(self, value, start, end, r):
         ratio = (value - start) / (end - start)
         i = int(ratio * r + 0.5)
         i = min(max(0, i), r - 1)
         return i
 
-    def debug_point(context, location, type='PLAIN_AXES'):
+    def debug_point(self, context, location, type='PLAIN_AXES'):
         o = context.blend_data.objects.new("P", None)
         o.location = location
         o.scale = (0.02, 0.02, 0.02)
         context.scene.objects.link(o)
         o.empty_draw_type = type
 
-    def create_bone(context, armature, bone, obj, chest, bones, bone_type=CreateArmature.BONE_TYPE_BODY):
+    def create_bone(self, context, armature, bone, obj, chest, bones, bone_type=BONE_TYPE_BODY):
         mesh = obj.to_mesh(context.scene, True, 'PREVIEW')
-        b = CreateArmature.bound_loc(obj)
-        le = b[CreateArmature.BOUND_LEFT]
-        ri = b[CreateArmature.BOUND_RIGHT]
-        ba = b[CreateArmature.BOUND_BACK]
-        fr = b[CreateArmature.BOUND_FRONT]
-        to = b[CreateArmature.BOUND_TOP]
-        bo = b[CreateArmature.BOUND_BOTTOM]    
-        if bone_type == CreateArmature.BONE_TYPE_BODY:
-            ce = b[CreateArmature.BOUND_CENTER]
+        b = self.bound_loc(obj)
+        le = b[BOUND_LEFT]
+        ri = b[BOUND_RIGHT]
+        ba = b[BOUND_BACK]
+        fr = b[BOUND_FRONT]
+        to = b[BOUND_TOP]
+        bo = b[BOUND_BOTTOM]    
+        if bone_type == BONE_TYPE_BODY:
+            ce = b[BOUND_CENTER]
             body_top = Vector((ce.x, ce.y, to))
             body_bottom = Vector((ce.x, ce.y, bo))
         len_x = le - ri
@@ -833,7 +856,7 @@ class CreateArmature(bpy.types.Operator):
         mz = 1.0 / float(rz)
         start = (0, 0, 0)
         min_dist = sys.float_info.max
-        if bone_type == CreateArmature.BONE_TYPE_BODY:
+        if bone_type == BONE_TYPE_BODY:
             origin = body_bottom
         else:
             origin = Vector(chest.tail)    
@@ -850,9 +873,9 @@ class CreateArmature(bpy.types.Operator):
         x1_y0_z1_polygons = []
         x1_y1_z0_polygons = []
         x1_y1_z1_polygons = []
-        half_x = CreateArmature.lerp(ri, le, 0.5)
-        half_y = CreateArmature.lerp(fr, ba, 0.5)
-        half_z = CreateArmature.lerp(bo, to, 0.5)
+        half_x = self.lerp(ri, le, 0.5)
+        half_y = self.lerp(fr, ba, 0.5)
+        half_z = self.lerp(bo, to, 0.5)
     
         for polygon in mesh.polygons: # Nearest polygon
             center =  mat * Vector(polygon.center)
@@ -884,7 +907,7 @@ class CreateArmature(bpy.types.Operator):
         for x in range(rx):
             for y in range(ry):
                 for z in range(rz):        
-                    current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                     current_length = sys.float_info.max
                     current_height = sys.float_info.max
                     polygons = []                
@@ -934,9 +957,9 @@ class CreateArmature(bpy.types.Operator):
                     if length < min_length and close < 0:
                         loc = coeff * normal + center
                         lx, ly, lz = loc.xyz
-                        u = CreateArmature.invlerp(lx, ri, le, rx)
-                        v = CreateArmature.invlerp(ly, fr, ba, ry)
-                        w = CreateArmature.invlerp(lz, bo, to, rz)
+                        u = self.invlerp(lx, ri, le, rx)
+                        v = self.invlerp(ly, fr, ba, ry)
+                        w = self.invlerp(lz, bo, to, rz)
                         centers.append((u, v, w))
         """
             Getting process of the nearest point from origin.
@@ -945,13 +968,13 @@ class CreateArmature(bpy.types.Operator):
         start = (0, 0, 0)
         for c in centers:
             x, y, z = c         
-            current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+            current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
             dist = (current - origin).length_squared
             if dist < min_dist:
                 min_dist = dist
                 start = (x, y, z)
         x, y, z = start
-        current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+        current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
         bone.head = current
         """
             Getting process of the farthest point.
@@ -960,16 +983,16 @@ class CreateArmature(bpy.types.Operator):
         max_length = 0.0
         for c in centers:
             x, y, z = c
-            current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+            current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
             u, v , w = start
-            s =  Vector((CreateArmature.lerp(ri, le, u * mx), CreateArmature.lerp(fr, ba, v * my), CreateArmature.lerp(bo, to, w * mz)))
+            s =  Vector((self.lerp(ri, le, u * mx), self.lerp(fr, ba, v * my), self.lerp(bo, to, w * mz)))
             length = (current - s).length_squared
             if max_length < length:
                 max_length = length
                 end = (x, y, z)
         sx, sy, sz = start
-        neck_limit = CreateArmature.BRANCH_LIMIT_HIPS
-        if bone_type == CreateArmature.BONE_TYPE_BODY:
+        neck_limit = BRANCH_LIMIT_HIPS
+        if bone_type == BONE_TYPE_BODY:
             min_length = sys.float_info.max
             min_loc = body_bottom
             """
@@ -977,7 +1000,7 @@ class CreateArmature(bpy.types.Operator):
             """        
             for c in centers:
                 x, y, z = c
-                current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                 length = (current - body_bottom).length_squared
                 stem = (body_top - body_bottom)
                 branch0 = (current - body_bottom)
@@ -989,13 +1012,13 @@ class CreateArmature(bpy.types.Operator):
                     min_loc = current
             start_loc = Vector((body_bottom.x, body_bottom.y, min_loc.z))
         else:
-            start_loc = Vector((CreateArmature.lerp(ri, le, sx * mx), CreateArmature.lerp(fr, ba, sy * my), CreateArmature.lerp(bo, to, sz * mz)))
+            start_loc = Vector((self.lerp(ri, le, sx * mx), self.lerp(fr, ba, sy * my), self.lerp(bo, to, sz * mz)))
         bone.head = start_loc
         ex, ey, ez = end
-        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+        if bone_type == BONE_TYPE_BODY:        
             end_loc = body_top
         else:
-            end_loc = Vector((CreateArmature.lerp(ri, le, ex * mx), CreateArmature.lerp(fr, ba, ey * my), CreateArmature.lerp(bo, to, ez * mz)))
+            end_loc = Vector((self.lerp(ri, le, ex * mx), self.lerp(fr, ba, ey * my), self.lerp(bo, to, ez * mz)))
         """
             Getting process of center and neck point.
         """                
@@ -1008,7 +1031,7 @@ class CreateArmature(bpy.types.Operator):
         neck_loc = start_loc
         for center in centers:
             cx, cy, cz = center
-            current = Vector((CreateArmature.lerp(ri, le, cx * mx), CreateArmature.lerp(fr, ba, cy * my), CreateArmature.lerp(bo, to, cz * mz)))
+            current = Vector((self.lerp(ri, le, cx * mx), self.lerp(fr, ba, cy * my), self.lerp(bo, to, cz * mz)))
             m_length = (current - m).length_squared
             n_length = (current - n).length_squared
             if m_length < min_length:
@@ -1017,7 +1040,7 @@ class CreateArmature(bpy.types.Operator):
             if n_length < neck_length:
                 neck_loc = current
                 neck_length = n_length
-        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+        if bone_type == BONE_TYPE_BODY:        
             hips_loc = start_loc.lerp(end_loc, 0.25)
             bone.tail = hips_loc
             center_loc = start_loc.lerp(end_loc, 0.5)
@@ -1031,7 +1054,7 @@ class CreateArmature(bpy.types.Operator):
         """
             Create process of primary bones.
         """                    
-        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+        if bone_type == BONE_TYPE_BODY:        
             bone = bones.new("waist")
             bone.head = hips_loc
             bone.tail = center_loc
@@ -1056,29 +1079,29 @@ class CreateArmature(bpy.types.Operator):
             end_bone = bone        
         else:
         
-            if bone_type == CreateArmature.BONE_TYPE_HEAD:
+            if bone_type == BONE_TYPE_HEAD:
                 name = "bone"
-            elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+            elif bone_type == BONE_TYPE_ARM_LEFT:
                 name = "upper_arm.L"
-            elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+            elif bone_type == BONE_TYPE_ARM_RIGHT:
                 name = "upper_arm.R"
-            elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+            elif bone_type == BONE_TYPE_LEG_LEFT:
                 name = "thigh.L"
-            elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+            elif bone_type == BONE_TYPE_LEG_RIGHT:
                 name = "thigh.R"
             else:
                 name = "bone"
             bone.name = name
         
-            if bone_type == CreateArmature.BONE_TYPE_HEAD:
+            if bone_type == BONE_TYPE_HEAD:
                 name = "bone"
-            elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+            elif bone_type == BONE_TYPE_ARM_LEFT:
                 name = "forearm.L"
-            elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+            elif bone_type == BONE_TYPE_ARM_RIGHT:
                 name = "forearm.R"
-            elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+            elif bone_type == BONE_TYPE_LEG_LEFT:
                 name = "shin.L"
-            elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+            elif bone_type == BONE_TYPE_LEG_RIGHT:
                 name = "shin.R"
             else:
                 name = "bone"    
@@ -1090,15 +1113,15 @@ class CreateArmature(bpy.types.Operator):
             parent = bone
             center_bone = bone
         
-            if bone_type == CreateArmature.BONE_TYPE_HEAD:
+            if bone_type == BONE_TYPE_HEAD:
                 name = "bone"
-            elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+            elif bone_type == BONE_TYPE_ARM_LEFT:
                 name = "hand.L"
-            elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+            elif bone_type == BONE_TYPE_ARM_RIGHT:
                 name = "hand.R"
-            elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+            elif bone_type == BONE_TYPE_LEG_LEFT:
                 name = "foot.L"
-            elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+            elif bone_type == BONE_TYPE_LEG_RIGHT:
                 name = "foot.R"
             else:
                 name = "bone"
@@ -1127,7 +1150,7 @@ class CreateArmature(bpy.types.Operator):
         hit_ys = []
         hit_zs = []
         threshopld = 1.0    
-        ratio = CreateArmature.BRANCH_BOOST
+        ratio = BRANCH_BOOST
         soft_x = unit_x * 0.0001 
         soft_y = unit_y * 0.0001
         soft_z = unit_z * 0.0001
@@ -1172,19 +1195,19 @@ class CreateArmature(bpy.types.Operator):
         average = Vector((0, 0, 0))
         dispersion = 0.0    
         sum = 0
-        center_limit = CreateArmature.BRANCH_LIMIT_CENTER
+        center_limit = BRANCH_LIMIT_CENTER
         for x in hit_xs:
             for y in hit_ys:
                 for z in hit_zs:
                     for center in centers:
                         u, v, w = center
-                        current = Vector((CreateArmature.lerp(ri, le, u * mx), CreateArmature.lerp(fr, ba, v * my), CreateArmature.lerp(bo, to, w * mz)))
+                        current = Vector((self.lerp(ri, le, u * mx), self.lerp(fr, ba, v * my), self.lerp(bo, to, w * mz)))
                         free = True
                         """
                             Avoiding process of body's neck.
                             It is because bad points for shoulders.
                         """
-                        if bone_type == CreateArmature.BONE_TYPE_BODY:                        
+                        if bone_type == BONE_TYPE_BODY:                        
                             proj0 = Vector((current.x, body_bottom.y, current.z))
                             proj1 = Vector((current.x, body_top.y, current.z))                        
                             branch0 = (proj0 - body_bottom)
@@ -1208,10 +1231,10 @@ class CreateArmature(bpy.types.Operator):
         average /= sum
         dispersion /= sum
         dispersion -= average.length_squared
-        dispersion *= CreateArmature.BRANCH_DISPERSION_RATIO
+        dispersion *= BRANCH_DISPERSION_RATIO
         bound = le, ri, ba, fr, to, bo
         m = mx, my, mz
-        gathers = CreateArmature.gather_point(hits, bound, m, dispersion)    
+        gathers = self.gather_point(hits, bound, m, dispersion)    
         possible_joints = []
         joints = []
         """
@@ -1222,7 +1245,7 @@ class CreateArmature(bpy.types.Operator):
             sum = 0
             for point in gather:
                 px, py, pz = hits[point]
-                p_loc = Vector((CreateArmature.lerp(ri, le, px * mx), CreateArmature.lerp(fr, ba, py * my), CreateArmature.lerp(bo, to, pz * mz)))
+                p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
                 average += p_loc
                 sum += 1
             if sum == 0:
@@ -1236,8 +1259,8 @@ class CreateArmature(bpy.types.Operator):
             le, ri, ba, fr, to, bo = bounds
             rx, ry, rz = rs
             ms = (mx, my, mz)
-            tips = [(CreateArmature.invlerp(hinge[1].x, ri, le, rx), CreateArmature.invlerp(hinge[1].y, fr, ba, ry), CreateArmature.invlerp(hinge[1].z, bo, to, rz)) for hinge in hinges]
-            gathers = CreateArmature.gather_point(tips, bounds, ms, dispersion)
+            tips = [(self.invlerp(hinge[1].x, ri, le, rx), self.invlerp(hinge[1].y, fr, ba, ry), self.invlerp(hinge[1].z, bo, to, rz)) for hinge in hinges]
+            gathers = self.gather_point(tips, bounds, ms, dispersion)
             """
                 Averaging process of gathered tips.
             """        
@@ -1247,7 +1270,7 @@ class CreateArmature(bpy.types.Operator):
                 sum = 0
                 for point in gather:
                     px, py, pz = tips[point]
-                    p_loc = Vector((CreateArmature.lerp(ri, le, px * mx), CreateArmature.lerp(fr, ba, py * my), CreateArmature.lerp(bo, to, pz * mz)))
+                    p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
                     average += p_loc
                     sum += 1
                 average /= sum
@@ -1282,7 +1305,7 @@ class CreateArmature(bpy.types.Operator):
                 min_n_length = sys.float_info.max
                 for center in centers:
                     x, y, z = center
-                    current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                     e_length = (current - e).length_squared
                     n_length = (current - n).length_squared
                     if e_length < min_e_length:
@@ -1298,20 +1321,20 @@ class CreateArmature(bpy.types.Operator):
                 min_s_length = sys.float_info.max
                 for center in centers:
                     x, y, z = center
-                    current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                     s_length = (current - s).length_squared            
                     if s_length < min_s_length:
                         min_s_length = s_length
                         min_s = current
-                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                if bone_type == BONE_TYPE_HEAD:
                     name = "bone"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                elif bone_type == BONE_TYPE_ARM_LEFT:
                     name = "shoulder.L"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                elif bone_type == BONE_TYPE_ARM_RIGHT:
                     name = "shoulder.R"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                elif bone_type == BONE_TYPE_LEG_LEFT:
                     name = "pelvis.L"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                elif bone_type == BONE_TYPE_LEG_RIGHT:
                     name = "pelvis.R"                
                 else:
                     name = "bone"
@@ -1321,15 +1344,15 @@ class CreateArmature(bpy.types.Operator):
                 bone.tail = max_joint
                 bone.parent = parent
                 p = bone
-                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                if bone_type == BONE_TYPE_HEAD:
                     name = "bone"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                elif bone_type == BONE_TYPE_ARM_LEFT:
                     name = "upper_arm.L"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                elif bone_type == BONE_TYPE_ARM_RIGHT:
                     name = "upper_arm.R"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                elif bone_type == BONE_TYPE_LEG_LEFT:
                     name = "thigh.L"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                elif bone_type == BONE_TYPE_LEG_RIGHT:
                     name = "thigh.R"
                 else:
                     name = "bone"
@@ -1340,15 +1363,15 @@ class CreateArmature(bpy.types.Operator):
                 bone.parent = p
                 p = bone
                 bone.use_connect = True
-                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                if bone_type == BONE_TYPE_HEAD:
                     name = "bone"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                elif bone_type == BONE_TYPE_ARM_LEFT:
                     name = "forearm.L"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                elif bone_type == BONE_TYPE_ARM_RIGHT:
                     name = "forearm.R"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                elif bone_type == BONE_TYPE_LEG_LEFT:
                     name = "shin.L"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                elif bone_type == BONE_TYPE_LEG_RIGHT:
                     name = "shin.R"
                 else:
                     name = "bone"
@@ -1359,15 +1382,15 @@ class CreateArmature(bpy.types.Operator):
                 bone.parent = p
                 bone.use_connect = True                
                 p = bone
-                if bone_type == CreateArmature.BONE_TYPE_HEAD:
+                if bone_type == BONE_TYPE_HEAD:
                     name = "bone"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_LEFT:
+                elif bone_type == BONE_TYPE_ARM_LEFT:
                     name = "hand.L"
-                elif bone_type == CreateArmature.BONE_TYPE_ARM_RIGHT:
+                elif bone_type == BONE_TYPE_ARM_RIGHT:
                     name = "hand.R"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_LEFT:
+                elif bone_type == BONE_TYPE_LEG_LEFT:
                     name = "foot.L"
-                elif bone_type == CreateArmature.BONE_TYPE_LEG_RIGHT:
+                elif bone_type == BONE_TYPE_LEG_RIGHT:
                     name = "foot.R"
                 else:
                     name = "bone"
@@ -1379,7 +1402,7 @@ class CreateArmature(bpy.types.Operator):
         """
             Getting process of tips like fingers's tip.
         """                
-        if bone_type == CreateArmature.BONE_TYPE_BODY:        
+        if bone_type == BONE_TYPE_BODY:        
             right_arms = []
             left_arms = []
             right_legs = []
@@ -1397,13 +1420,13 @@ class CreateArmature(bpy.types.Operator):
                     continue
                 branch_normal = branch.normalized()
                 angle = stem.angle(branch)
-                limit_angle = CreateArmature.BRANCH_LIMIT_ARM if arm else CreateArmature.BRANCH_LIMIT_LEG
+                limit_angle = BRANCH_LIMIT_ARM if arm else BRANCH_LIMIT_LEG
                 if limit_angle < angle:
                     max_close = -sys.float_info.max
                     max_loc = joint
                     for center in centers:
                         x, y, z = center
-                        current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                        current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                         if arm:
                             height = hips_loc.z < current.z
                         else:
@@ -1425,10 +1448,10 @@ class CreateArmature(bpy.types.Operator):
             bounds = (le, ri, ba, fr, to, bo)
             ms = (mx, my, mz)
             rs = (rx, ry, rz)
-            create_joint(centers, left_arms, bounds, rs, ms, dispersion, "Arm.L", chest_bone, CreateArmature.BONE_TYPE_ARM_LEFT)
-            create_joint(centers, right_arms, bounds, rs, ms, dispersion, "Arm.R", chest_bone, CreateArmature.BONE_TYPE_ARM_RIGHT)
-            create_joint(centers, left_legs, bounds, rs, ms, dispersion, "Leg.L", start_bone, CreateArmature.BONE_TYPE_LEG_LEFT)
-            create_joint(centers, right_legs, bounds, rs, ms, dispersion, "Leg.R", start_bone, CreateArmature.BONE_TYPE_LEG_RIGHT)        
+            create_joint(centers, left_arms, bounds, rs, ms, dispersion, "Arm.L", chest_bone, BONE_TYPE_ARM_LEFT)
+            create_joint(centers, right_arms, bounds, rs, ms, dispersion, "Arm.R", chest_bone, BONE_TYPE_ARM_RIGHT)
+            create_joint(centers, left_legs, bounds, rs, ms, dispersion, "Leg.L", start_bone, BONE_TYPE_LEG_LEFT)
+            create_joint(centers, right_legs, bounds, rs, ms, dispersion, "Leg.R", start_bone, BONE_TYPE_LEG_RIGHT)        
         else:
             tips = []
             for joint in joints:
@@ -1438,14 +1461,14 @@ class CreateArmature(bpy.types.Operator):
                     continue
                 branch_normal = branch.normalized()
                 angle = stem.angle(branch)
-                limit_angle = CreateArmature.BRANCH_LIMIT_ANY
+                limit_angle = BRANCH_LIMIT_ANY
                 close = stem.dot(branch)
                 if 0 < close and limit_angle < angle:
                     max_close = -sys.float_info.max
                     max_loc = joint
                     for center in centers:
                         x, y, z = center
-                        current = Vector((CreateArmature.lerp(ri, le, x * mx), CreateArmature.lerp(fr, ba, y * my), CreateArmature.lerp(bo, to, z * mz)))
+                        current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                         close =  (current - joint).dot(branch_normal)
                         if max_close < close:
                             max_close = close
@@ -1454,14 +1477,14 @@ class CreateArmature(bpy.types.Operator):
             bounds = (le, ri, ba, fr, to, bo)
             ms = (mx, my, mz)
             rs = (rx, ry, rz)
-            create_joint(centers, tips, bounds, rs, ms, dispersion, name, center_bone, CreateArmature.BONE_TYPE_ANY)
+            create_joint(centers, tips, bounds, rs, ms, dispersion, name, center_bone, BONE_TYPE_ANY)
         """
             Finish process.
         """
         bpy.data.meshes.remove(mesh)
         return start_bone, end_bone
 
-    def gather_point(points, bound, m, dispersion):
+    def gather_point(self, points, bound, m, dispersion):
         """
             Gathering points to gathers.
         """
@@ -1471,13 +1494,13 @@ class CreateArmature(bpy.types.Operator):
             if alreadys[k]:
                 continue
             hits = [k,]
-            CreateArmature._gather_point(k, points, bound, m, dispersion, hits)
+            self._gather_point(k, points, bound, m, dispersion, hits)
             gathers.append(hits)
             for hit in hits:
                 alreadys[hit] = True
         return gathers
 
-    def _gather_point(index, points, bound, m, dispersion, hits):
+    def _gather_point(self, index, points, bound, m, dispersion, hits):
         """
             Recursion call of points' collision.
         """
@@ -1486,13 +1509,13 @@ class CreateArmature(bpy.types.Operator):
         px, py, pz = point
         le, ri, ba, fr, to, bo = bound
         mx, my, mz = m
-        p_loc = Vector((CreateArmature.lerp(ri, le, px * mx), CreateArmature.lerp(fr, ba, py * my), CreateArmature.lerp(bo, to, pz * mz)))
+        p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
         neighbors = []
         for k, neighbor in enumerate(points):
             if neighbor == point:
                 continue
             nx, ny, nz = neighbor
-            n_loc = Vector((CreateArmature.lerp(ri, le, nx * mx), CreateArmature.lerp(fr, ba, ny * my), CreateArmature.lerp(bo, to, nz * mz)))
+            n_loc = Vector((self.lerp(ri, le, nx * mx), self.lerp(fr, ba, ny * my), self.lerp(bo, to, nz * mz)))
             length = (p_loc - n_loc).length_squared
             if length < dispersion:
                 neighbors.append(k)
@@ -1505,13 +1528,13 @@ class CreateArmature(bpy.types.Operator):
         if current_count == len(hits):
             return True
         for neighbor in neighbors:
-            g = CreateArmature._gather_point(neighbor, points, bound, m, dispersion, hits)
+            g = self._gather_point(neighbor, points, bound, m, dispersion, hits)
             if g:
                 return True
-    def create_head(bone, obj, chest):
-        b = CreateArmature.bound_loc(obj)
-        p = b[CreateArmature.BOUND_TOP]
-        n = b[CreateArmature.BOUND_BOTTOM]
+    def create_head(self, bone, obj, chest):
+        b = self.bound_loc(obj)
+        p = b[BOUND_TOP]
+        n = b[BOUND_BOTTOM]
         bone.head = Vector((obj.location.x, obj.location.y, n))
         bone.tail = Vector((obj.location.x, obj.location.y, p))
         bone.parent = chest
