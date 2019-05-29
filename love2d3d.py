@@ -24,7 +24,7 @@ import sys
 bl_info = {
     "name": "Love2D3D",
     "author": "Fuji Sunflower",
-    "version": (1, 2),
+    "version": (1, 3),
     "blender": (2, 79, 0),
     "location": "3D View > Object Mode > Tool Shelf > Create > Love2D3D",
     "description": "Create 3D object from 2D image",
@@ -60,12 +60,13 @@ BOUND_BOTTOM = 5
 BOUND_CENTER = 6
 #LATTICE_RESOLUTION = 6.0
 BRANCH_BOOST = 3.0
-BRANCH_DISPERSION_RATIO = 0.1
-BRANCH_LIMIT_HIPS = np.radians(5.0) 
-BRANCH_LIMIT_CENTER = np.radians(5.0) 
-BRANCH_LIMIT_ARM = np.radians(30.0)
-BRANCH_LIMIT_LEG = np.radians(5.0)
-BRANCH_LIMIT_ANY = np.radians(30.0)
+#BRANCH_DISPERSION_RATIO = 0.1
+#BRANCH_LIMIT_HIPS = np.radians(5.0) 
+#BRANCH_LIMIT_CENTER = np.radians(5.0) 
+#BRANCH_LIMIT_ARM = np.radians(30.0)
+#BRANCH_LIMIT_LEG = np.radians(5.0)
+#BRANCH_LIMIT_ANY = np.radians(30.0)
+#BRANCH_LIMIT_FINGER = np.radians(3.0)
 BONE_TYPE_ANY = -1
 BONE_TYPE_BODY = 0
 BONE_TYPE_HEAD = 1
@@ -73,6 +74,9 @@ BONE_TYPE_ARM_LEFT = 2
 BONE_TYPE_ARM_RIGHT = 3
 BONE_TYPE_LEG_LEFT = 4
 BONE_TYPE_LEG_RIGHT = 5
+#BONE_TYPE_FINGER = 6
+BONE_TYPE_FINGER_LEFT = 7
+BONE_TYPE_FINGER_RIGHT = 8
 
 def draw_callback_px(self, context):
     #print("mouse points", len(self.mouse_path))
@@ -522,7 +526,55 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
         #row.prop(self, "my_float")
         #row.prop(self, "my_bool")
         #layout.prop(self, "my_string")
-        layout.prop(context.window_manager.love2d3d, "view_align")
+        #layout.prop(context.window_manager.love2d3d, "view_align")
+        #col = layout.column(align=True)
+        #col.label(text="Object", icon="OBJECT_DATA")
+        #col.operator(CreateObject.bl_idname, text="Create")
+        #row = col.row()
+        #row.label(text="Preview")
+        #preview = context.window_manager.love2d3d.preview
+        #row.operator(Preview.bl_idname, text="On" if preview else "Off")
+        col = layout.column(align=True)
+        col.label(text="Image", icon="IMAGE_DATA")
+        #col.operator("image.open", icon="FILESEL")
+        col.prop_search(context.window_manager.love2d3d,
+                        "image_front", context.blend_data, "images")
+        col.prop_search(context.window_manager.love2d3d,
+                        "image_back", context.blend_data, "images")
+        layout.separator()
+        col = layout.column(align=True)
+        col.label(text="Separation", icon="IMAGE_RGB_ALPHA")
+        col.prop(context.window_manager.love2d3d, "threshold")
+        col.prop(context.window_manager.love2d3d, "opacity")
+        layout.separator()
+        col = layout.column(align=True)
+        col.label(text="Geometry", icon="EDITMODE_HLT")
+        col.prop(context.window_manager.love2d3d, "view_align")
+        col.prop(context.window_manager.love2d3d, "depth_front")
+        col.prop(context.window_manager.love2d3d, "depth_back")
+        col.prop(context.window_manager.love2d3d, "scale")
+        layout.separator()
+        col = layout.column(align=True)
+        col.label(text="Quality", icon="MOD_SMOOTH")
+        col.prop(context.window_manager.love2d3d, "rough")
+        col.prop(context.window_manager.love2d3d, "smooth")
+        col.prop(context.window_manager.love2d3d, "fat")
+        layout.separator()
+        col = layout.column(align=True)
+        col.label(text="Decimate", icon="MOD_DECIM")        
+        col.prop(context.window_manager.love2d3d, "decimate")
+        col.prop(context.window_manager.love2d3d, "decimate_ratio")
+        layout.separator()
+        #col = layout.column(align=True)
+        #col.label(text="Armature", icon="ARMATURE_DATA")        
+        #col.operator(CreateArmature.bl_idname, text="Create")
+        #col.prop(context.window_manager.love2d3d, "armature_resolution")
+        #col.prop(context.window_manager.love2d3d, "armature_finger_resolution")
+        #layout.separator()
+        col = layout.column(align=True)
+        col.label(text="Option", icon="SCRIPTWIN")
+        col.prop(context.window_manager.love2d3d, "modifier")
+        col.prop(context.window_manager.love2d3d, "shadeless")
 
 class CreateArmature(bpy.types.Operator):
 
@@ -530,7 +582,46 @@ class CreateArmature(bpy.types.Operator):
     bl_label = "Create Armature"
     bl_description = "Create Armature to selected objects"
     bl_options = {'REGISTER', 'UNDO'}
-    
+    finger_limit_angle = bpy.props.FloatProperty(name="Finger limit",
+                                          description="Limit angle of finger",
+                                          min=0.0, default=np.radians(8.0), subtype='ANGLE')
+    hips_limit_angle = bpy.props.FloatProperty(name="Hips limit",
+                                          description="Limit angle of hips",
+                                          min=0.0, max=np.radians(90.0), default=np.radians(5.0), subtype='ANGLE')
+    center_limit_angle = bpy.props.FloatProperty(name="Center limit",
+                                          description="Limit angle of center",
+                                          min=0.0, max=np.radians(90.0), default=np.radians(5.0), subtype='ANGLE')
+    arm_limit_angle = bpy.props.FloatProperty(name="Arm limit",
+                                          description="Limit angle of arm",
+                                          min=0.0, max=np.radians(90.0), default=np.radians(30.0), subtype='ANGLE')
+    leg_limit_angle = bpy.props.FloatProperty(name="Leg limit",
+                                          description="Limit angle of leg",
+                                          min=0.0, max=np.radians(90.0), default=np.radians(5.0), subtype='ANGLE')
+    any_limit_angle = bpy.props.FloatProperty(name="Any limit",
+                                          description="Limit angle of any bone",
+                                          min=0.0, max=np.radians(90.0), default=np.radians(30.0), subtype='ANGLE')
+    hand_limit_angle = bpy.props.FloatProperty(name="Hand limit",
+                                          description="Limit angle of hand",
+                                          min=0.0, max=np.radians(90.0), default=np.radians(45.0), subtype='ANGLE')
+    branch_boost = bpy.props.FloatProperty(name="Boost",
+                                          description="How many points hit as branch",
+                                          min=0.01, max=10.0, default=3.0)
+    finger_branch_boost = bpy.props.FloatProperty(name="Finger boost",
+                                          description="How many points hit as branch in finger",
+                                          min=0.01, max=10.0, default=3.0)
+    gather_ratio = bpy.props.FloatProperty(name="Gather",
+                                          description="How many branchs gather",
+                                          min=0.0, max=100.0, default=10, subtype='PERCENTAGE')
+    finger_gather_ratio = bpy.props.FloatProperty(name="Finger gather",
+                                          description="How many branchs gather in finger",
+                                          min=0.0, max=100.0, default=1, subtype='PERCENTAGE')    
+    tip_gather_ratio = bpy.props.FloatProperty(name="Tip gather",
+                                          description="How many tips gather in finger",
+                                          min=0.0, max=100.0, default=3, subtype='PERCENTAGE')    
+    #use_finger = bpy.props.BoolProperty(name="Finger",
+    #                                  description="Use finger",
+    #                                  default=False)
+
     #BOUND_LEFT = 0
     #BOUND_RIGHT = 1
     #BOUND_BACK = 2
@@ -558,8 +649,39 @@ class CreateArmature(bpy.types.Operator):
         return self.skinning(context)
 
     def draw(self, context):
+        #super.draw(context)
         layout = self.layout
-        layout.prop(context.window_manager.love2d3d, "armature_resolution")
+        layout.label(text="Main", icon="ARMATURE_DATA")
+        col = layout.column(align=True)
+        col.label(text="Resolution", icon="LATTICE_DATA")
+        col.prop(context.window_manager.love2d3d, "armature_resolution")
+        col = layout.column(align=True)
+        col.label(text="Limit", icon="CONSTRAINT")
+        col.prop(self, "hips_limit_angle")
+        col.prop(self, "center_limit_angle")
+        col.prop(self, "arm_limit_angle")
+        col.prop(self, "leg_limit_angle")
+        col.prop(self, "any_limit_angle")
+        col = layout.column(align=True)
+        col.label(text="Amount", icon="EDITMODE_HLT")
+        col.prop(self, "branch_boost")
+        col.prop(self, "gather_ratio")
+        layout.separator()
+        #layout = layout.column(align=True)
+        layout.label(text="Finger", icon="HAND")
+        col = layout.column(align=True)
+        col.prop(context.window_manager.love2d3d, "armature_finger")
+        col.label(text="Resolution", icon="LATTICE_DATA")
+        col.prop(context.window_manager.love2d3d, "armature_finger_resolution")
+        col = layout.column(align=True)
+        col.label(text="Limit", icon="CONSTRAINT")
+        col.prop(self, "hand_limit_angle")
+        col.prop(self, "finger_limit_angle")
+        col = layout.column(align=True)
+        col.label(text="Amount", icon="EDITMODE_HLT")
+        col.prop(self, "finger_branch_boost")
+        col.prop(self, "finger_gather_ratio")
+        col.prop(self, "tip_gather_ratio")
 
     def bound_loc(self, obj):
         """
@@ -789,6 +911,38 @@ class CreateArmature(bpy.types.Operator):
         #        CreateArmature.create_bone(context, arma, bone, obj, primary_bone, arma.data.edit_bones, bone_type=CreateArmature.BONE_TYPE_ARM_LEFT)
         self.create_grouped_bone(context, right_arms, arma, chest, BONE_TYPE_ARM_RIGHT)
         self.create_grouped_bone(context, left_arms, arma, chest, BONE_TYPE_ARM_LEFT)
+        if context.window_manager.love2d3d.armature_finger:
+            """
+                Rename fingers
+            """
+            left_fingers = []
+            right_fingers = []
+            for bone in arma.data.edit_bones:
+                if bone.name.startswith("finger") and not bone.use_connect:
+                    if bone.name.endswith(".L"):
+                        left_fingers.append(bone)
+                    else:
+                        right_fingers.append(bone)
+            lefts = sorted(left_fingers, key=lambda bone: bone.head.y)
+            rights = sorted(right_fingers, key=lambda bone: bone.head.y)
+            for k, bone4 in enumerate(lefts):
+                bone4.name = "finger" + str(k) +".04" + ".L"
+                bone3 = bone4.children_recursive[0]
+                bone3.name =  "finger" + str(k) +".03" + ".L"
+                bone2 = bone3.children_recursive[0]
+                bone2.name =  "finger" + str(k) +".02" + ".L"
+                bone1 = bone2.children_recursive[0]
+                bone1.name =  "finger" + str(k) +".01" + ".L"
+            for k, bone4 in enumerate(rights):
+                bone4.name = "finger" + str(k) +".04" + ".R"
+                bone3 = bone4.children_recursive[0]
+                bone3.name =  "finger" + str(k) +".03" + ".R"
+                bone2 = bone3.children_recursive[0]
+                bone2.name =  "finger" + str(k) +".02" + ".R"
+                bone1 = bone2.children_recursive[0]
+                bone1.name =  "finger" + str(k) +".01" + ".R"
+
+
         for bone in arma.data.edit_bones:
             bone.select = True        
         bpy.ops.armature.calculate_roll(type='GLOBAL_POS_Z')    
@@ -823,19 +977,46 @@ class CreateArmature(bpy.types.Operator):
     def debug_point(self, context, location, type='PLAIN_AXES'):
         o = context.blend_data.objects.new("P", None)
         o.location = location
-        o.scale = (0.02, 0.02, 0.02)
+        o.scale = (0.001, 0.001, 0.001)
         context.scene.objects.link(o)
         o.empty_draw_type = type
 
-    def create_bone(self, context, armature, bone, obj, chest, bones, bone_type=BONE_TYPE_BODY):
+    def create_bone(self, context, armature, bone, obj, chest, bones, bone_type=BONE_TYPE_BODY, fingers=None):
+        #print(bone_type)
+        finger = fingers is not None
+        if finger:
+            bones.remove(bone)
         mesh = obj.to_mesh(context.scene, True, 'PREVIEW')
-        b = self.bound_loc(obj)
-        le = b[BOUND_LEFT]
-        ri = b[BOUND_RIGHT]
-        ba = b[BOUND_BACK]
-        fr = b[BOUND_FRONT]
-        to = b[BOUND_TOP]
-        bo = b[BOUND_BOTTOM]    
+        polygons = fingers if finger else mesh.polygons
+        mat = Matrix(obj.matrix_world)
+        if finger:
+            polygons = fingers
+            xs = [(mat * Vector(polygon.center)).x for polygon in polygons]
+            ys = [(mat * Vector(polygon.center)).y for polygon in polygons]
+            zs = [(mat * Vector(polygon.center)).z for polygon in polygons]
+
+            #b = self.bound_loc(obj)
+            #le = b[BOUND_LEFT]
+            #ri = b[BOUND_RIGHT]
+            #ba = b[BOUND_BACK]
+            #fr = b[BOUND_FRONT]
+            #to = b[BOUND_TOP]
+            #bo = b[BOUND_BOTTOM]
+            le = max(xs)
+            ri = min(xs)
+            ba = max(ys)
+            fr = min(ys)
+            to = max(zs)
+            bo = min(zs)
+        else:
+            polygons = mesh.polygons
+            b = self.bound_loc(obj)
+            le = b[BOUND_LEFT]
+            ri = b[BOUND_RIGHT]
+            ba = b[BOUND_BACK]
+            fr = b[BOUND_FRONT]
+            to = b[BOUND_TOP]
+            bo = b[BOUND_BOTTOM]
         if bone_type == BONE_TYPE_BODY:
             ce = b[BOUND_CENTER]
             body_top = Vector((ce.x, ce.y, to))
@@ -844,7 +1025,18 @@ class CreateArmature(bpy.types.Operator):
         len_y = ba - fr
         len_z = to - bo
         armature_resolution = context.window_manager.love2d3d.armature_resolution
-        lattice = min(len_x, len_y, len_z) / armature_resolution # latiice unit
+        if finger:
+            #digit = np.floor(np.log2(armature_resolution)) + 1
+            #lattice = min(len_x, len_y, len_z) / np.power(2.0, digit) # latiice unit
+            #lattice = min(len_x, len_y, len_z) / .0 # latiice unit
+            lattice = min(len_x, len_y, len_z) / context.window_manager.love2d3d.armature_finger_resolution # latiice unit
+        else:
+            lattice = min(len_x, len_y, len_z) / armature_resolution # latiice unit
+        #if lattice == 0.0:
+        #print(obj.name)
+        #print("{}, {}, {}".format(len_x, len_y, len_z))
+        if lattice == 0.0:
+            return None, None
         rx = int(len_x / lattice) # x loop count
         ry = int(len_y / lattice) # y loop count
         rz = int(len_z / lattice) # z loop count    
@@ -860,7 +1052,6 @@ class CreateArmature(bpy.types.Operator):
             origin = body_bottom
         else:
             origin = Vector(chest.tail)    
-        mat = Matrix(obj.matrix_world)                
         centers = []
         """
             Volume separation process to reduce polygons' calculation.
@@ -876,8 +1067,7 @@ class CreateArmature(bpy.types.Operator):
         half_x = self.lerp(ri, le, 0.5)
         half_y = self.lerp(fr, ba, 0.5)
         half_z = self.lerp(bo, to, 0.5)
-    
-        for polygon in mesh.polygons: # Nearest polygon
+        for polygon in polygons: # Nearest polygon
             center =  mat * Vector(polygon.center)
             if center.x <= half_x:
                 if center.y <= half_y:
@@ -904,9 +1094,10 @@ class CreateArmature(bpy.types.Operator):
         """
             Deciding process of inside points.
         """
-        for x in range(rx):
-            for y in range(ry):
-                for z in range(rz):        
+        hand_center = Vector((0, 0, 0))
+        for x in range(rx + 1):
+            for y in range(ry + 1):
+                for z in range(rz + 1):        
                     current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                     current_length = sys.float_info.max
                     current_height = sys.float_info.max
@@ -961,6 +1152,12 @@ class CreateArmature(bpy.types.Operator):
                         v = self.invlerp(ly, fr, ba, ry)
                         w = self.invlerp(lz, bo, to, rz)
                         centers.append((u, v, w))
+                        hand_center += loc
+#                        if finger:
+#                            self.debug_point(context, loc)
+        hand_center /= len(centers)
+        #print(hand_center)
+
         """
             Getting process of the nearest point from origin.
         """    
@@ -975,23 +1172,33 @@ class CreateArmature(bpy.types.Operator):
                 start = (x, y, z)
         x, y, z = start
         current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
-        bone.head = current
+        if not finger:
+            bone.head = current
         """
             Getting process of the farthest point.
         """
         end = start
         max_length = 0.0
+        max_coeff = 0.0
         for c in centers:
             x, y, z = c
             current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
             u, v , w = start
             s =  Vector((self.lerp(ri, le, u * mx), self.lerp(fr, ba, v * my), self.lerp(bo, to, w * mz)))
-            length = (current - s).length_squared
-            if max_length < length:
-                max_length = length
-                end = (x, y, z)
+            if finger:
+                vec = chest.tail - chest.head
+                #length = (current - s).length_squared
+                coeff = (current - s).dot(vec)
+                if max_coeff < coeff:
+                    max_coeff = coeff
+                    end = (x, y, z)
+            else:
+                length = (current - s).length_squared
+                if max_length < length:
+                    max_length = length
+                    end = (x, y, z)
         sx, sy, sz = start
-        neck_limit = BRANCH_LIMIT_HIPS
+        #neck_limit = BRANCH_LIMIT_HIPS
         if bone_type == BONE_TYPE_BODY:
             min_length = sys.float_info.max
             min_loc = body_bottom
@@ -1007,13 +1214,14 @@ class CreateArmature(bpy.types.Operator):
                 length = branch0.length_squared            
                 if stem.length_squared == 0.0 or branch0.length_squared == 0.0:
                     continue            
-                if length < min_length and stem.angle(branch0) <  neck_limit:
+                if length < min_length and stem.angle(branch0) < self.hips_limit_angle:
                     min_length = length
                     min_loc = current
             start_loc = Vector((body_bottom.x, body_bottom.y, min_loc.z))
         else:
             start_loc = Vector((self.lerp(ri, le, sx * mx), self.lerp(fr, ba, sy * my), self.lerp(bo, to, sz * mz)))
-        bone.head = start_loc
+        if not finger:
+            bone.head = start_loc
         ex, ey, ez = end
         if bone_type == BONE_TYPE_BODY:        
             end_loc = body_top
@@ -1045,6 +1253,8 @@ class CreateArmature(bpy.types.Operator):
             bone.tail = hips_loc
             center_loc = start_loc.lerp(end_loc, 0.5)
             neck_loc = start_loc.lerp(end_loc, 0.75)
+        elif finger:
+            pass
         else:
             bone.tail = center_loc        
             bone.parent = chest        
@@ -1076,9 +1286,33 @@ class CreateArmature(bpy.types.Operator):
             bone.tail = end_loc
             bone.parent = parent
             bone.use_connect = True    
-            end_bone = bone        
+            end_bone = bone
+
+        elif bone_type == BONE_TYPE_FINGER_LEFT or bone_type == BONE_TYPE_FINGER_RIGHT:
+            name = "finger"
+            end_bone = None
+            start_bone = None
+            #pass
         else:
-        
+            if bone_type == BONE_TYPE_HEAD:
+                name = "bone"
+            elif bone_type == BONE_TYPE_ARM_LEFT:
+                name = "shoulder.L"
+            elif bone_type == BONE_TYPE_ARM_RIGHT:
+                name = "shoulder.R"
+            elif bone_type == BONE_TYPE_LEG_LEFT:
+                name = "pelvis.L"
+            elif bone_type == BONE_TYPE_LEG_RIGHT:
+                name = "pelvis.R"
+            else:
+                name = "bone"
+            bone.name = name
+            vec = (origin - start_loc)
+            basis = (start_loc - center_loc).normalized()
+            coeff = vec.dot(basis)
+            bone.head = 0.5 * coeff * basis + start_loc
+            bone.tail = start_loc
+
             if bone_type == BONE_TYPE_HEAD:
                 name = "bone"
             elif bone_type == BONE_TYPE_ARM_LEFT:
@@ -1091,7 +1325,14 @@ class CreateArmature(bpy.types.Operator):
                 name = "thigh.R"
             else:
                 name = "bone"
-            bone.name = name
+            bone = bones.new(name)
+            bone.head = start_loc
+            bone.tail = center_loc        
+            bone.parent = parent
+            bone.use_connect = True
+            parent = bone
+            center_bone = bone
+
         
             if bone_type == BONE_TYPE_HEAD:
                 name = "bone"
@@ -1131,12 +1372,13 @@ class CreateArmature(bpy.types.Operator):
             bone.parent = parent
             bone.use_connect = True    
             end_bone = bone
+
         """
             Caluculate process of volume.
         """    
-        volume_xs = [0 for x in range(rx)]
-        volume_ys = [0 for y in range(ry)]
-        volume_zs = [0 for z in range(rz)]
+        volume_xs = [0 for x in range(rx + 1)]
+        volume_ys = [0 for y in range(ry + 1)]
+        volume_zs = [0 for z in range(rz + 1)]
         soft  = 1
         unit_x = my * mz
         unit_y = mz * mx
@@ -1149,8 +1391,8 @@ class CreateArmature(bpy.types.Operator):
         hit_xs = []
         hit_ys = []
         hit_zs = []
-        threshopld = 1.0    
-        ratio = BRANCH_BOOST
+        threshopld = 1.0
+        ratio = self.finger_branch_boost if finger else self.branch_boost
         soft_x = unit_x * 0.0001 
         soft_y = unit_y * 0.0001
         soft_z = unit_z * 0.0001
@@ -1158,7 +1400,7 @@ class CreateArmature(bpy.types.Operator):
             Differential process of volume in log scale.
             It tell us like "A's scale is B's scale of x1, x10, x100...".
         """
-        for x in range(1, rx - 1):
+        for x in range(1, rx + 1 - 1):
             vm = volume_xs[x - 1]
             v0 = volume_xs[x]
             v1 =  volume_xs[x + 1]
@@ -1168,7 +1410,7 @@ class CreateArmature(bpy.types.Operator):
             diff = (2 * sv - ev - mv) ** 2
             if threshopld <= diff:
                 hit_xs.append(x)
-        for y in range(1, ry - 1):
+        for y in range(1, ry + 1 - 1):
             vm = volume_ys[y - 1]        
             v0 = volume_ys[y]
             v1 = volume_ys[y + 1]
@@ -1178,7 +1420,7 @@ class CreateArmature(bpy.types.Operator):
             diff = (2 * sv - ev - mv) ** 2
             if threshopld <= diff:
                 hit_ys.append(y)
-        for z in range(1, rz - 1):
+        for z in range(1, rz + 1 - 1):
             vm = volume_zs[z - 1]        
             v0 = volume_zs[z]
             v1 = volume_zs[z + 1]
@@ -1195,7 +1437,7 @@ class CreateArmature(bpy.types.Operator):
         average = Vector((0, 0, 0))
         dispersion = 0.0    
         sum = 0
-        center_limit = BRANCH_LIMIT_CENTER
+        center_limit = self.center_limit_angle
         for x in hit_xs:
             for y in hit_ys:
                 for z in hit_zs:
@@ -1223,6 +1465,12 @@ class CreateArmature(bpy.types.Operator):
                             average += current
                             dispersion += current.length_squared
                             sum += 1
+#                            if finger:
+#                                self.debug_point(context, current, type="CUBE")
+#                            if finger:
+#                                self.debug_point(context, current)
+
+
         """
             Gathering process of branch points.
         """    
@@ -1231,10 +1479,12 @@ class CreateArmature(bpy.types.Operator):
         average /= sum
         dispersion /= sum
         dispersion -= average.length_squared
-        dispersion *= BRANCH_DISPERSION_RATIO
+
+        #dispersion *= (self.finger_gather_ratio) if finger else (self.gather_ratio* 0.01)
+        gather_ratio = (dispersion * self.finger_gather_ratio * 0.01) if finger else (dispersion * self.gather_ratio * 0.01)
         bound = le, ri, ba, fr, to, bo
         m = mx, my, mz
-        gathers = self.gather_point(hits, bound, m, dispersion)    
+        gathers = self.gather_point(hits, bound, m, gather_ratio)
         possible_joints = []
         joints = []
         """
@@ -1252,29 +1502,60 @@ class CreateArmature(bpy.types.Operator):
                 continue
             average /= sum
             joints.append(average)
+#            if finger:
+#                self.debug_point(context, average, type="CUBE")
+#            if finger:
+#                self.debug_point(context, average)
+
         """
             Calculating and creating process of bones.
         """
-        def create_joint(centers, hinges, bounds, rs, ms, dispersion, name, parent, bone_type):
+        def create_joint(centers, hinges, bounds, rs, ms, dispersion, name, parent, bone_type, end=Vector((0, 0, 0))):
             le, ri, ba, fr, to, bo = bounds
             rx, ry, rz = rs
             ms = (mx, my, mz)
             tips = [(self.invlerp(hinge[1].x, ri, le, rx), self.invlerp(hinge[1].y, fr, ba, ry), self.invlerp(hinge[1].z, bo, to, rz)) for hinge in hinges]
-            gathers = self.gather_point(tips, bounds, ms, dispersion)
+            if bone_type == BONE_TYPE_FINGER_LEFT or bone_type == BONE_TYPE_FINGER_RIGHT:
+                 gathers = self.gather_point(tips, bounds, ms, dispersion, parent=parent, end=end)
+            else:
+                 gathers = self.gather_point(tips, bounds, ms, dispersion)
             """
                 Averaging process of gathered tips.
             """        
             averages = [Vector((0,0,0)) for g in gathers]
             for k, gather in enumerate(gathers):
-                average = Vector((0, 0, 0))
-                sum = 0
-                for point in gather:
-                    px, py, pz = tips[point]
-                    p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
-                    average += p_loc
-                    sum += 1
-                average /= sum
-                averages[k] = average
+                if bone_type == BONE_TYPE_FINGER_LEFT or bone_type == BONE_TYPE_FINGER_RIGHT:
+                    average = Vector((0, 0, 0))
+                    #sum = 0
+                    max_close = 0.0
+                    max_point = Vector((0, 0, 0))
+                    vec = end - parent.head
+                    for point in gather:
+                        px, py, pz = tips[point]
+                        p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
+                        close = p_loc.dot(vec)
+                        if max_close < close:
+                            max_close = close
+                            max_point = p_loc
+                        #average += p_loc
+                        #sum += 1
+                    #average /= sum
+                    averages[k] = max_point
+    #                if finger:
+                else:
+                    average = Vector((0, 0, 0))
+                    sum = 0
+                    for point in gather:
+                        px, py, pz = tips[point]
+                        p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
+                        average += p_loc
+                        sum += 1
+                    average /= sum
+                    averages[k] = average
+#                self.debug_point(context, average, type="CUBE")
+            """
+                Grouping hinge by average points.
+            """
             groups = [[] for a in averages]
             for hinge in hinges:
                 joint, tip = hinge
@@ -1286,6 +1567,8 @@ class CreateArmature(bpy.types.Operator):
                         min_length = length
                         min_index = k
                 groups[min_index].append(joint)
+            #bone = None
+            end_bones = []
             for k, tip in enumerate(averages):
                 max_length = -sys.float_info.max
                 max_joint = tip
@@ -1299,21 +1582,29 @@ class CreateArmature(bpy.types.Operator):
                         max_joint = joint
                 e = max_joint.lerp(tip, 0.5)
                 n = max_joint.lerp(tip, 0.75)
+                t = max_joint.lerp(tip, 0.875)
                 min_e = Vector((0, 0, 0))
                 min_n = Vector((0, 0, 0))
+                min_t = Vector((0, 0, 0))
                 min_e_length = sys.float_info.max
                 min_n_length = sys.float_info.max
+                min_t_length = sys.float_info.max
                 for center in centers:
                     x, y, z = center
                     current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                     e_length = (current - e).length_squared
                     n_length = (current - n).length_squared
+                    t_length = (current - t).length_squared
                     if e_length < min_e_length:
                         min_e_length = e_length
                         min_e = current
                     if n_length < min_n_length:
                         min_n_length = n_length
                         min_n = current
+                    if t_length < min_t_length:
+                        min_t_length = t_length
+                        min_t = current
+
                 vec = (max_joint - min_e).normalized()
                 coeff = (parent.tail - max_joint).dot(vec)
                 s = vec * coeff * 0.5 + max_joint
@@ -1335,15 +1626,21 @@ class CreateArmature(bpy.types.Operator):
                 elif bone_type == BONE_TYPE_LEG_LEFT:
                     name = "pelvis.L"
                 elif bone_type == BONE_TYPE_LEG_RIGHT:
-                    name = "pelvis.R"                
+                    name = "pelvis.R"
+                elif bone_type == BONE_TYPE_FINGER_LEFT:
+                    name = "finger" + self.index_bone(max_joint) + ".L"
+                elif bone_type == BONE_TYPE_FINGER_RIGHT:
+                    name = "finger" + self.index_bone(max_joint) + ".R"
                 else:
                     name = "bone"
-                
-                bone = bones.new(name)
-                bone.head = min_s
-                bone.tail = max_joint
-                bone.parent = parent
-                p = bone
+
+                if bone_type != BONE_TYPE_FINGER_LEFT and bone_type != BONE_TYPE_FINGER_RIGHT:
+                    bone = bones.new(name)
+                    bone.head = min_s
+                    bone.tail = max_joint
+                    bone.parent = parent
+                    p = bone
+
                 if bone_type == BONE_TYPE_HEAD:
                     name = "bone"
                 elif bone_type == BONE_TYPE_ARM_LEFT:
@@ -1354,15 +1651,22 @@ class CreateArmature(bpy.types.Operator):
                     name = "thigh.L"
                 elif bone_type == BONE_TYPE_LEG_RIGHT:
                     name = "thigh.R"
+                elif bone_type == BONE_TYPE_FINGER_LEFT:
+                    name = "finger" + self.index_bone(max_joint) + ".L"
+                elif bone_type == BONE_TYPE_FINGER_RIGHT:
+                    name = "finger" + self.index_bone(max_joint) + ".R"
                 else:
                     name = "bone"
             
                 bone = bones.new(name)
                 bone.head = max_joint
                 bone.tail = min_e
-                bone.parent = p
+                if bone_type == BONE_TYPE_FINGER_LEFT or bone_type == BONE_TYPE_FINGER_RIGHT:
+                    bone.parent = parent
+                else:
+                    bone.parent = p
+                    bone.use_connect = True
                 p = bone
-                bone.use_connect = True
                 if bone_type == BONE_TYPE_HEAD:
                     name = "bone"
                 elif bone_type == BONE_TYPE_ARM_LEFT:
@@ -1373,6 +1677,10 @@ class CreateArmature(bpy.types.Operator):
                     name = "shin.L"
                 elif bone_type == BONE_TYPE_LEG_RIGHT:
                     name = "shin.R"
+                elif bone_type == BONE_TYPE_FINGER_LEFT:
+                    name = "finger" + self.index_bone(max_joint) + ".L"
+                elif bone_type == BONE_TYPE_FINGER_RIGHT:
+                    name = "finger" + self.index_bone(max_joint) + ".R"
                 else:
                     name = "bone"
             
@@ -1392,17 +1700,47 @@ class CreateArmature(bpy.types.Operator):
                     name = "foot.L"
                 elif bone_type == BONE_TYPE_LEG_RIGHT:
                     name = "foot.R"
+                elif bone_type == BONE_TYPE_FINGER_LEFT:
+                    name = "finger" + self.index_bone(max_joint) + ".L"
+                elif bone_type == BONE_TYPE_FINGER_RIGHT:
+                    name = "finger" + self.index_bone(max_joint) + ".R"
                 else:
                     name = "bone"
                 bone = bones.new(name)
                 bone.head = min_n
-                bone.tail = tip
+                if bone_type == BONE_TYPE_FINGER_LEFT or bone_type == BONE_TYPE_FINGER_RIGHT:
+                    bone.tail = min_t
+                else:
+                    bone.tail = tip
                 bone.parent = p
-                bone.use_connect = True    
+                bone.use_connect = True
+                p = bone
+                if bone_type == BONE_TYPE_FINGER_LEFT:
+                    name = "finger" + self.index_bone(max_joint) + ".L"
+                    bone = bones.new(name)
+                    bone.head = min_n
+                    bone.tail = tip
+                    bone.parent = p
+                    bone.use_connect = True
+                elif bone_type == BONE_TYPE_FINGER_RIGHT:
+                    name = "finger" + self.index_bone(max_joint) + ".R"
+                    bone = bones.new(name)
+                    bone.head = min_n
+                    bone.tail = tip
+                    bone.parent = p
+                    bone.use_connect = True
+                end_bones.append(bone)
+
+            return end_bones
         """
             Getting process of tips like fingers's tip.
-        """                
-        if bone_type == BONE_TYPE_BODY:        
+        """
+        left_hands = []
+        right_hands = []
+        left_foots = []
+        right_foots = []
+
+        if bone_type == BONE_TYPE_BODY:
             right_arms = []
             left_arms = []
             right_legs = []
@@ -1420,7 +1758,7 @@ class CreateArmature(bpy.types.Operator):
                     continue
                 branch_normal = branch.normalized()
                 angle = stem.angle(branch)
-                limit_angle = BRANCH_LIMIT_ARM if arm else BRANCH_LIMIT_LEG
+                limit_angle = self.arm_limit_angle if arm else self.leg_limit_angle
                 if limit_angle < angle:
                     max_close = -sys.float_info.max
                     max_loc = joint
@@ -1448,10 +1786,61 @@ class CreateArmature(bpy.types.Operator):
             bounds = (le, ri, ba, fr, to, bo)
             ms = (mx, my, mz)
             rs = (rx, ry, rz)
-            create_joint(centers, left_arms, bounds, rs, ms, dispersion, "Arm.L", chest_bone, BONE_TYPE_ARM_LEFT)
-            create_joint(centers, right_arms, bounds, rs, ms, dispersion, "Arm.R", chest_bone, BONE_TYPE_ARM_RIGHT)
-            create_joint(centers, left_legs, bounds, rs, ms, dispersion, "Leg.L", start_bone, BONE_TYPE_LEG_LEFT)
-            create_joint(centers, right_legs, bounds, rs, ms, dispersion, "Leg.R", start_bone, BONE_TYPE_LEG_RIGHT)        
+            left_hands = create_joint(centers, left_arms, bounds, rs, ms, gather_ratio, "Arm.L", chest_bone, BONE_TYPE_ARM_LEFT)
+            right_hands = create_joint(centers, right_arms, bounds, rs, ms, gather_ratio, "Arm.R", chest_bone, BONE_TYPE_ARM_RIGHT)
+            left_foots = create_joint(centers, left_legs, bounds, rs, ms, gather_ratio, "Leg.L", start_bone, BONE_TYPE_LEG_LEFT)
+            right_foots = create_joint(centers, right_legs, bounds, rs, ms, gather_ratio, "Leg.R", start_bone, BONE_TYPE_LEG_RIGHT)
+        elif bone_type == BONE_TYPE_FINGER_LEFT or bone_type == BONE_TYPE_FINGER_RIGHT:
+            tips = []
+            for joint in joints:
+                #stem = chest.tail - chest.head
+                stem = end_loc - chest.head
+                #end_loc
+                #branch = joint - chest.head.lerp(hand_center, 1.0)
+                branch = joint - chest.head
+                #branch = joint - hand_center
+                #hand_center.dot()
+#                branch1 = joint - chest.head.lerp(chest.tail, 0.5)
+                if stem.length_squared == 0.0 or branch.length_squared == 0.0:
+                    continue
+                branch_normal = branch.normalized()
+                angle = stem.angle(branch)
+                #limit_angle = BRANCH_LIMIT_FINGER
+                limit_angle = self.finger_limit_angle
+                close = stem.dot(branch)
+#                close1 = branch1.dot(stem)
+               
+                if 0 < close:
+#                if 0 < close and 0 < close1:
+                    max_close = -sys.float_info.max
+                    max_loc = joint
+                    #hit = False
+                    min_angle = sys.float_info.max
+                    for center in centers:
+                        x, y, z = center
+                        current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
+                        vec0 = current - joint
+                        #vec1 = current - end_loc
+                        #vec1 = current - chest.head.lerp(chest.tail, 0.5)
+                        close =  vec0.dot(stem)
+                        if vec0.length_squared == 0.0:
+                            continue
+                        angle = vec0.angle(stem)
+                        # and 0 < vec1.dot(stem)
+                        if max_close < close and angle < limit_angle:
+                        #if angle < min_angle:
+                            max_close = close
+                            max_loc = current
+                            min_angle = angle
+                    tips.append((joint, max_loc))                        
+#                    self.debug_point(context, max_loc, type="CUBE")
+#                    self.debug_point(context, max_loc)
+            bounds = (le, ri, ba, fr, to, bo)
+            ms = (mx, my, mz)
+            rs = (rx, ry, rz)
+            #dispersion *= 5
+            tip_gather_ratio = dispersion * self.tip_gather_ratio * 0.01
+            create_joint(centers, tips, bounds, rs, ms, tip_gather_ratio, name, chest, bone_type, end=end_loc)
         else:
             tips = []
             for joint in joints:
@@ -1461,7 +1850,7 @@ class CreateArmature(bpy.types.Operator):
                     continue
                 branch_normal = branch.normalized()
                 angle = stem.angle(branch)
-                limit_angle = BRANCH_LIMIT_ANY
+                limit_angle = self.any_limit_angle
                 close = stem.dot(branch)
                 if 0 < close and limit_angle < angle:
                     max_close = -sys.float_info.max
@@ -1473,18 +1862,71 @@ class CreateArmature(bpy.types.Operator):
                         if max_close < close:
                             max_close = close
                             max_loc = current
-                    tips.append((joint, max_loc))                        
+                    tips.append((joint, max_loc))
+#                    self.debug_point(context, max_loc, type="CUBE")
             bounds = (le, ri, ba, fr, to, bo)
             ms = (mx, my, mz)
             rs = (rx, ry, rz)
-            create_joint(centers, tips, bounds, rs, ms, dispersion, name, center_bone, BONE_TYPE_ANY)
+            #left_hands = create_joint(centers, tips, bounds, rs, ms, gather_ratio, name, center_bone, BONE_TYPE_ANY)
+            if (bone_type == BONE_TYPE_ARM_LEFT or bone_type == BONE_TYPE_ARM_RIGHT) and context.window_manager.love2d3d.armature_finger:
+                pass
+            else:
+                create_joint(centers, tips, bounds, rs, ms, gather_ratio, name, end_bone, BONE_TYPE_ANY)
+            if bone_type == BONE_TYPE_ARM_LEFT:
+                left_hands.append(end_bone)
+            elif bone_type == BONE_TYPE_ARM_RIGHT:
+                right_hands.append(end_bone)
+        """
+            Finger process.
+        """
+        if not finger and context.window_manager.love2d3d.armature_finger:
+            #if left_hand is not None:
+            #    fingers = []
+            #    for polygon in mesh.polygons:
+            #        center =  mat * Vector(polygon.center)
+            #        vec = left_hand.tail - left_hand.head
+            #        coeff = (center - left_hand.head.lerp(left_hand.tail, 0.5)).dot(vec)
+            #        #coeff = (center - hand_center).dot(vec)                
+            #        if 0 < coeff:
+            #            fingers.append(polygon)
+            #    if len(fingers) != 0:
+            #        bone = armature.data.edit_bones.new("head")
+            #        self.create_bone(context, armature, bone, obj, left_hand, bones, bone_type=BONE_TYPE_FINGER, fingers=fingers)
+            self.crete_finger(context, armature, obj, mesh, mat, bones, left_hands, BONE_TYPE_FINGER_LEFT)
+            self.crete_finger(context, armature, obj, mesh, mat, bones, right_hands, BONE_TYPE_FINGER_RIGHT)
+            #self.crete_finger(context, armature, obj, mesh, mat, bones, left_foots)
+            #self.crete_finger(context, armature, obj, mesh, mat, bones, right_foots)
+
         """
             Finish process.
-        """
-        bpy.data.meshes.remove(mesh)
+        """ 
+        if not finger:
+            bpy.data.meshes.remove(mesh)
         return start_bone, end_bone
+    def index_bone(self, location):
+        y = int(location.y * 1000)
+        return str(y)
 
-    def gather_point(self, points, bound, m, dispersion):
+    def crete_finger(self, context, armature, obj, mesh, mat, bones, hands, bone_type):
+        for hand in hands:
+            fingers = []
+            for polygon in mesh.polygons:
+                center =  mat * Vector(polygon.center)
+                vec = hand.tail - hand.head
+                m = hand.head.lerp(hand.tail, 0.0)
+                coeff = (center - m).dot(vec)
+                #coeff = (center - hand_center).dot(vec)
+                vec1 = center - hand.head
+                if vec.length_squared == 0.0 or vec1.length_squared == 0.0:
+                    continue
+                angle = vec.angle(vec1)
+                if 0 < coeff and angle < self.hand_limit_angle:
+                    fingers.append(polygon)
+            if len(fingers) != 0:
+                bone = armature.data.edit_bones.new("head")
+                self.create_bone(context, armature, bone, obj, hand, bones, bone_type=bone_type, fingers=fingers)
+
+    def gather_point(self, points, bound, m, dispersion, parent=None, end=Vector((0, 0, 0))):
         """
             Gathering points to gathers.
         """
@@ -1494,13 +1936,13 @@ class CreateArmature(bpy.types.Operator):
             if alreadys[k]:
                 continue
             hits = [k,]
-            self._gather_point(k, points, bound, m, dispersion, hits)
+            self._gather_point(k, points, bound, m, dispersion, hits, parent=parent, end=end)
             gathers.append(hits)
             for hit in hits:
                 alreadys[hit] = True
         return gathers
 
-    def _gather_point(self, index, points, bound, m, dispersion, hits):
+    def _gather_point(self, index, points, bound, m, dispersion, hits, parent=None, end=Vector((0, 0, 0))):
         """
             Recursion call of points' collision.
         """
@@ -1509,14 +1951,27 @@ class CreateArmature(bpy.types.Operator):
         px, py, pz = point
         le, ri, ba, fr, to, bo = bound
         mx, my, mz = m
-        p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
+        if parent is not None:
+            vec = (end - parent.head).normalized()
+            p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
+            coeff = (p_loc- parent.head).dot(vec)
+            p_loc = (p_loc- parent.head) - coeff * vec
+        else:
+            p_loc = Vector((self.lerp(ri, le, px * mx), self.lerp(fr, ba, py * my), self.lerp(bo, to, pz * mz)))
         neighbors = []
         for k, neighbor in enumerate(points):
             if neighbor == point:
                 continue
             nx, ny, nz = neighbor
-            n_loc = Vector((self.lerp(ri, le, nx * mx), self.lerp(fr, ba, ny * my), self.lerp(bo, to, nz * mz)))
+            if parent is not None:
+                vec = (end - parent.head).normalized()
+                n_loc = Vector((self.lerp(ri, le, nx * mx), self.lerp(fr, ba, ny * my), self.lerp(bo, to, nz * mz)))
+                coeff = (n_loc - parent.head).dot(vec)
+                n_loc = (n_loc - parent.head) - coeff * vec
+            else:
+                n_loc = Vector((self.lerp(ri, le, nx * mx), self.lerp(fr, ba, ny * my), self.lerp(bo, to, nz * mz)))
             length = (p_loc - n_loc).length_squared
+            #length = (p_loc - n_loc).length_squared
             if length < dispersion:
                 neighbors.append(k)
         for neighbor in neighbors:
@@ -1528,9 +1983,10 @@ class CreateArmature(bpy.types.Operator):
         if current_count == len(hits):
             return True
         for neighbor in neighbors:
-            g = self._gather_point(neighbor, points, bound, m, dispersion, hits)
+            g = self._gather_point(neighbor, points, bound, m, dispersion, hits, parent=parent, end=end)
             if g:
                 return True
+
     def create_head(self, bone, obj, chest):
         b = self.bound_loc(obj)
         p = b[BOUND_TOP]
@@ -1555,50 +2011,56 @@ class VIEW3D_PT_love2d3d(bpy.types.Panel):
         col = layout.column(align=True)
         col.label(text="Object", icon="OBJECT_DATA")
         col.operator(CreateObject.bl_idname, text="Create")
-        row = col.row()
-        row.label(text="Preview")
+        
+        #row = col.row()
+        col = layout.column(align=True)
+        col.label(text="Preview",icon="GHOST_ENABLED")
         preview = context.window_manager.love2d3d.preview
-        row.operator(Preview.bl_idname, text="On" if preview else "Off")
+        col.operator(Preview.bl_idname, text="On" if preview else "Off")
         col = layout.column(align=True)
         col.label(text="Image", icon="IMAGE_DATA")
-        col.operator("image.open", icon="FILESEL")
+        col.operator("image.open", icon="FILESEL", text="Open")
+        col = layout.column(align=True)
         col.prop_search(context.window_manager.love2d3d,
                         "image_front", context.blend_data, "images")
         col.prop_search(context.window_manager.love2d3d,
                         "image_back", context.blend_data, "images")
-        layout.separator()
-        col = layout.column(align=True)
-        col.label(text="Separation", icon="IMAGE_RGB_ALPHA")
-        col.prop(context.window_manager.love2d3d, "threshold")
-        col.prop(context.window_manager.love2d3d, "opacity")
-        layout.separator()
-        col = layout.column(align=True)
-        col.label(text="Geometry", icon="EDITMODE_HLT")
-        col.prop(context.window_manager.love2d3d, "view_align")
-        col.prop(context.window_manager.love2d3d, "depth_front")
-        col.prop(context.window_manager.love2d3d, "depth_back")
-        col.prop(context.window_manager.love2d3d, "scale")
-        layout.separator()
-        col = layout.column(align=True)
-        col.label(text="Quality", icon="MOD_SMOOTH")
-        col.prop(context.window_manager.love2d3d, "rough")
-        col.prop(context.window_manager.love2d3d, "smooth")
-        col.prop(context.window_manager.love2d3d, "fat")
-        layout.separator()
-        col = layout.column(align=True)
-        col.label(text="Decimate", icon="MOD_DECIM")        
-        col.prop(context.window_manager.love2d3d, "decimate")
-        col.prop(context.window_manager.love2d3d, "decimate_ratio")
+        #layout.separator()
+        #col = layout.column(align=True)
+        #col.label(text="Separation", icon="IMAGE_RGB_ALPHA")
+        #col.prop(context.window_manager.love2d3d, "threshold")
+        #col.prop(context.window_manager.love2d3d, "opacity")
+        #layout.separator()
+        #col = layout.column(align=True)
+        #col.label(text="Geometry", icon="EDITMODE_HLT")
+        #col.prop(context.window_manager.love2d3d, "view_align")
+        #col.prop(context.window_manager.love2d3d, "depth_front")
+        #col.prop(context.window_manager.love2d3d, "depth_back")
+        #col.prop(context.window_manager.love2d3d, "scale")
+        #layout.separator()
+        #col = layout.column(align=True)
+        #col.label(text="Quality", icon="MOD_SMOOTH")
+        #col.prop(context.window_manager.love2d3d, "rough")
+        #col.prop(context.window_manager.love2d3d, "smooth")
+        #col.prop(context.window_manager.love2d3d, "fat")
+        #layout.separator()
+        #col = layout.column(align=True)
+        #col.label(text="Decimate", icon="MOD_DECIM")        
+        #col.prop(context.window_manager.love2d3d, "decimate")
+        #col.prop(context.window_manager.love2d3d, "decimate_ratio")
         layout.separator()
         col = layout.column(align=True)
         col.label(text="Armature", icon="ARMATURE_DATA")        
         col.operator(CreateArmature.bl_idname, text="Create")
-        col.prop(context.window_manager.love2d3d, "armature_resolution")
-        layout.separator()
         col = layout.column(align=True)
-        col.label(text="Option", icon="SCRIPTWIN")
-        col.prop(context.window_manager.love2d3d, "modifier")
-        col.prop(context.window_manager.love2d3d, "shadeless")
+        col.prop(context.window_manager.love2d3d, "armature_finger")
+        col.prop(context.window_manager.love2d3d, "armature_resolution")
+        col.prop(context.window_manager.love2d3d, "armature_finger_resolution")
+        #layout.separator()
+        #col = layout.column(align=True)
+        #col.label(text="Option", icon="SCRIPTWIN")
+        #col.prop(context.window_manager.love2d3d, "modifier")
+        #col.prop(context.window_manager.love2d3d, "shadeless")
 
 
 class Love2D3DProps(bpy.types.PropertyGroup):
@@ -1655,7 +2117,14 @@ class Love2D3DProps(bpy.types.PropertyGroup):
                                       default=True)
     armature_resolution = bpy.props.FloatProperty(name="Resolution",
                                           description="Resolution of armature calculation",
-                                          min=1, default=8.0)
+                                          min=1, default=6.0)
+    armature_finger_resolution = bpy.props.FloatProperty(name="Finger resolution",
+                                          description="Finger's resolution of armature calculation",
+                                          min=1, default=6.0)
+    armature_finger = bpy.props.BoolProperty(name="Finger",
+                                      description="Use finger in armature",
+                                      default=False)
+
 def register():
     bpy.utils.register_module(__name__)
     bpy.types.WindowManager.love2d3d \
