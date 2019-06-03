@@ -1,6 +1,6 @@
 # What is this?
 Blender addon to create 3D object from 2D image.  
-Movie is [YouTube](https://youtu.be/Zcal1JiTky8).  
+Movie is [here](https://youtu.be/Zcal1JiTky8) and [here](https://youtu.be/2k7ia8CKgT0).  
 You can use with usual paint tool and build 3D object with Blender!  
 Download is [releases](https://github.com/rn9dfj3/love2d3d/releases). 
 More information is [wiki](https://github.com/rn9dfj3/love2d3d/wiki).
