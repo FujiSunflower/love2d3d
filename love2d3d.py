@@ -19,12 +19,15 @@ from bpy_extras.view3d_utils import location_3d_to_region_2d
 import bgl
 import blf
 from mathutils import Vector, Matrix
+from mathutils.kdtree import KDTree
+#from mathutils.bvhtree import BVHTree
 import sys
+#import datetime
 
 bl_info = {
     "name": "Love2D3D",
     "author": "Fuji Sunflower",
-    "version": (1, 3),
+    "version": (2, 0),
     "blender": (2, 79, 0),
     "location": "3D View > Object Mode > Tool Shelf > Create > Love2D3D",
     "description": "Create 3D object from 2D image",
@@ -269,6 +272,7 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
     #view_align = True
 
     def execute(self, context):
+        #debug_time = datetime.datetime.today()
         image = context.window_manager.love2d3d.image_front  # Image ID
         if image == "":
             return {"CANCELLED"}
@@ -328,13 +332,24 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
         if len(fronts) == 0:
             return {"CANCELLED"}
         sqAll = all ** 2
-        xs = np.array([f[X] for f in fronts])  # X coordinates of each point
-        ys = np.array([f[Y] for f in fronts])  # Y coordinates of each point
-        ls = np.full(len(fronts), sqAll)
-        for t in terms:
-            ms = np.minimum(ls, np.power(t[X] - xs, 2) + np.power(t[Y] - ys, 2))
-            ls = ms  # Watershed algorithm
-        ms = np.sqrt(ls) + 1 # length array with softning
+        
+        #xs = np.array([f[X] for f in fronts])  # X coordinates of each point
+        #ys = np.array([f[Y] for f in fronts])  # Y coordinates of each point
+        #ls = np.full(len(fronts), sqAll)
+        #for t in terms:
+        #    ms = np.minimum(ls, np.power(t[X] - xs, 2) + np.power(t[Y] - ys, 2))
+        #    ls = ms  # Watershed algorithm        
+        kd = KDTree(len(terms))
+        for i, t in enumerate(terms):
+            kd.insert((t[X], t[Y], 0), i)
+        kd.balance()
+        ls = [0.0 for f in fronts]
+        for k, f in enumerate(fronts):
+            co_find = (f[X], f[Y], 0)
+            co, index, dist = kd.find(co_find)
+            ls[k] = dist
+        #ms = np.sqrt(ls) + 1 # length array with softning
+        ms = np.array([l + 1 for l in ls])
         m = np.max(ms)
         ls = np.divide(ms, m)  # Nomalize
         ms = (np.sin(ls * np.pi * 0.5) + 0)
@@ -517,6 +532,7 @@ class CreateObject(bpy.types.Operator, AddObjectHelper):
                 bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Decimate")
         obj.select = True
         bpy.ops.object.shade_smooth()
+        #print(datetime.datetime.today() - debug_time)
         return {'FINISHED'}
     def draw(self, context):
         layout = self.layout
@@ -605,10 +621,10 @@ class CreateArmature(bpy.types.Operator):
                                           min=0.0, max=np.radians(90.0), default=np.radians(45.0), subtype='ANGLE')
     branch_boost = bpy.props.FloatProperty(name="Boost",
                                           description="How many points hit as branch",
-                                          min=0.01, max=10.0, default=3.0)
+                                          min=0.01, default=3.0)
     finger_branch_boost = bpy.props.FloatProperty(name="Finger boost",
                                           description="How many points hit as branch in finger",
-                                          min=0.01, max=10.0, default=3.0)
+                                          min=0.01, default=3.0)
     gather_ratio = bpy.props.FloatProperty(name="Gather",
                                           description="How many branchs gather",
                                           min=0.0, max=100.0, default=10, subtype='PERCENTAGE')
@@ -788,6 +804,7 @@ class CreateArmature(bpy.types.Operator):
             groups.append(group)
         return groups
     def skinning(self, context):
+        #debug_time = datetime.datetime.today()
         if len(context.selected_objects) == 0:
             return {"CANCELLED"}
         objects = [] # Only Mesh
@@ -951,6 +968,7 @@ class CreateArmature(bpy.types.Operator):
             obj.select = True
         context.scene.objects.active = arma
         bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+        #print(datetime.datetime.today() - debug_time)
         return {'FINISHED'}
 
     def create_grouped_bone(self, context, objects, armature, parent, bone_type):
@@ -971,13 +989,14 @@ class CreateArmature(bpy.types.Operator):
     def invlerp(self, value, start, end, r):
         ratio = (value - start) / (end - start)
         i = int(ratio * r + 0.5)
-        i = min(max(0, i), r - 1)
+        #i = min(max(0, i), r - 1)
+        i = min(max(0, i), r)
         return i
 
     def debug_point(self, context, location, type='PLAIN_AXES'):
         o = context.blend_data.objects.new("P", None)
         o.location = location
-        o.scale = (0.001, 0.001, 0.001)
+        o.scale = (0.01, 0.01, 0.01)
         context.scene.objects.link(o)
         o.empty_draw_type = type
 
@@ -1017,8 +1036,9 @@ class CreateArmature(bpy.types.Operator):
             fr = b[BOUND_FRONT]
             to = b[BOUND_TOP]
             bo = b[BOUND_BOTTOM]
+        ce = Vector((self.lerp(ri, le, 0.5), self.lerp(fr, ba, 0.5), self.lerp(bo, to, 0.5)))
         if bone_type == BONE_TYPE_BODY:
-            ce = b[BOUND_CENTER]
+            #ce = b[BOUND_CENTER]
             body_top = Vector((ce.x, ce.y, to))
             body_bottom = Vector((ce.x, ce.y, bo))
         len_x = le - ri
@@ -1056,82 +1076,361 @@ class CreateArmature(bpy.types.Operator):
         """
             Volume separation process to reduce polygons' calculation.
         """
-        x0_y0_z0_polygons = []    
-        x1_y0_z0_polygons = []
-        x0_y1_z0_polygons = []
-        x0_y0_z1_polygons = []    
-        x0_y1_z1_polygons = []
-        x1_y0_z1_polygons = []
-        x1_y1_z0_polygons = []
-        x1_y1_z1_polygons = []
+        #x0_y0_z0_polygons = []    
+        #x1_y0_z0_polygons = []
+        #x0_y1_z0_polygons = []
+        #x0_y0_z1_polygons = []    
+        #x0_y1_z1_polygons = []
+        #x1_y0_z1_polygons = []
+        #x1_y1_z0_polygons = []
+        #x1_y1_z1_polygons = []
+        #half_x = self.lerp(ri, le, 0.5)
+        #half_y = self.lerp(fr, ba, 0.5)
+        #half_z = self.lerp(bo, to, 0.5)
+        #x0_polygons = []
+        #x1_polygons = []
+        #y0_polygons = []
+        #y1_polygons = []
+        #z0_polygons = []
+        #z1_polygons = []
+                
+        """
+            Angle-based separation
+        """
+        #loop = 10
+        #cakes = [[[[] for u in range(loop * 2 + 1)] for v in range(loop * 2 + 1)] for w in range(loop * 2 + 1)]
+        ##kds = [[[None for u in range(loop + 1)] for v in range(loop + 1)] for w in range(loop + 1)]
+        #for polygon in polygons: # Nearest polygon
+        #    center =  mat * Vector(polygon.center)
+        #    n = (center - ce).normalized()
+        #    u = int(np.round(n.x * loop)) + loop
+        #    v = int(np.round(n.y * loop)) + loop
+        #    w = int(np.round(n.z * loop)) + loop
+        #    #print("{},{},{}".format(u, v, w))
+        #    cakes[w][v][u].append(polygon)
+        ##        for cake in cakes:
+        ##            kd = KDTree(len(cake))
+        ##            for i, polygon in enumerate(cake):
+        ##                kd.insert(mat * Vector(polygon.center), i)
+        ##            kd.balance()
+        ##            kds = 
+
+        loop = 2
         half_x = self.lerp(ri, le, 0.5)
         half_y = self.lerp(fr, ba, 0.5)
         half_z = self.lerp(bo, to, 0.5)
+        #half_x = (le - ri) / float(loop)
+        #half_y = (ba - fr) / float(loop)
+        #half_z = (to - bo) / float(loop)
+        #cake_xs = [[] for x in range(loop)]
+        #cake_ys = [[] for y in range(loop)]
+        #cake_zs = [[] for z in range(loop)]
+        cakes = [[[[] for x in range(loop)] for y in range(loop)]for z in range(loop)]
         for polygon in polygons: # Nearest polygon
             center =  mat * Vector(polygon.center)
-            if center.x <= half_x:
-                if center.y <= half_y:
-                    if center.z <= half_z:
-                        x0_y0_z0_polygons.append(polygon)
-                    else:
-                        x0_y0_z1_polygons.append(polygon)
-                else:
-                    if center.z <= half_z:
-                        x0_y1_z0_polygons.append(polygon)                    
-                    else:
-                        x0_y1_z1_polygons.append(polygon)
-            else:
-                if center.y <= half_y:
-                    if center.z <= half_z:
-                        x1_y0_z0_polygons.append(polygon)                    
-                    else:                
-                        x1_y0_z1_polygons.append(polygon)
-                else:
-                    if center.z <= half_z:
-                        x1_y1_z0_polygons.append(polygon)
-                    else:
-                        x1_y1_z1_polygons.append(polygon)
+            x = 0 if center.x <= half_x else 1
+            y = 0 if center.y <= half_y else 1
+            z = 0 if center.z <= half_z else 1
+            #x = int((center.x - ri) / half_x)
+            #y = int((center.y - fr) / half_y)
+            #z = int((center.z - bo) / half_z)
+            cakes[z][y][x].append(polygon)
+            #cake_xs[x].append(polygon)
+            #cake_ys[y].append(polygon)
+            #cake_zs[z].append(polygon)
+
+        kds = [[[None for x in range(loop)] for y in range(loop)] for z in range(loop)]
+        for x in range(loop):
+            for y in range(loop):
+                for z in range(loop):
+                    cake = cakes[z][y][x]
+                    kd = KDTree(len(cake))
+                    for i, polygon in enumerate(cake):
+                        kd.insert(mat * Vector(polygon.center), i)
+                    kd.balance()
+                    kds[z][y][x] = kd
+
+        #bvhs = [[[None for x in range(loop)] for y in range(loop)] for z in range(loop)]
+        #for x in range(loop):
+        #    for y in range(loop):
+        #        for z in range(loop):
+        #            cake = cakes[z][y][x]
+        #            vs = []
+        #            ps = []
+        #            offset = 0
+        #            for polygon in cake:
+        #                vs.extend([(mat * Vector(mesh.vertices[vertice].co)).xyz for vertice in polygon.vertices])
+        #                ps.append(range(offset, polygon.loop_total + offset))
+        #                offset += polygon.loop_total
+        #            bvh = BVHTree.FromPolygons(vs, ps)
+        #            #for i, polygon in enumerate(cake):
+        #            #    kd.insert(mat * Vector(polygon.center), i)
+        #            #kd.balance()
+        #            #kds[z][y][x] = kd
+        #            bvhs[z][y][x] = bvh
+
+        #for polygon in polygons: # Nearest polygon
+        #    center =  mat * Vector(polygon.center)
+        #    if center.x <= half_x:
+        #        if center.y <= half_y:
+        #            if center.z <= half_z:
+        #                x0_y0_z0_polygons.append(polygon)
+        #                z0_polygons.append(polygon)
+        #            else:
+        #                x0_y0_z1_polygons.append(polygon)
+        #                z1_polygons.append(polygon)
+        #            y0_polygons.append(polygon)
+        #        else:
+        #            if center.z <= half_z:
+        #                x0_y1_z0_polygons.append(polygon)                    
+        #                z0_polygons.append(polygon)
+        #            else:
+        #                x0_y1_z1_polygons.append(polygon)
+        #                z1_polygons.append(polygon)
+
+        #            y1_polygons.append(polygon)
+        #        x0_polygons.append(polygon)
+        #    else:
+        #        if center.y <= half_y:
+        #            if center.z <= half_z:
+        #                x1_y0_z0_polygons.append(polygon)                    
+        #                z0_polygons.append(polygon)
+        #            else:                
+        #                x1_y0_z1_polygons.append(polygon)
+        #                z1_polygons.append(polygon)
+        #            y0_polygons.append(polygon)
+        #        else:
+        #            if center.z <= half_z:
+        #                x1_y1_z0_polygons.append(polygon)
+        #                z0_polygons.append(polygon)
+        #            else:
+        #                x1_y1_z1_polygons.append(polygon)
+        #                z1_polygons.append(polygon)
+        #            y1_polygons.append(polygon)
+        #        x1_polygons.append(polygon)
+        #s = len(x0_y0_z0_polygons)
+        #x0_y0_z0_kd = KDTree(s)
+        #for i, polygon in enumerate(x0_y0_z0_polygons):
+        #    x0_y0_z0_kd.insert(mat * Vector(polygon.center), i)
+        #x0_y0_z0_kd.balance()
+
+        #s = len(x0_y0_z1_polygons)
+        #x0_y0_z1_kd = KDTree(s)
+        #for i, polygon in enumerate(x0_y0_z1_polygons):
+        #    x0_y0_z1_kd.insert(mat * Vector(polygon.center), i)
+        #x0_y0_z1_kd.balance()
+
+        #s = len(x0_y1_z0_polygons)
+        #x0_y1_z0_kd = KDTree(s)
+        #for i, polygon in enumerate(x0_y1_z0_polygons):
+        #    x0_y1_z0_kd.insert(mat * Vector(polygon.center), i)
+        #x0_y1_z0_kd.balance()
+
+        #s = len(x0_y1_z1_polygons)
+        #x0_y1_z1_kd = KDTree(s)
+        #for i, polygon in enumerate(x0_y1_z1_polygons):
+        #    x0_y1_z1_kd.insert(mat * Vector(polygon.center), i)
+        #x0_y1_z1_kd.balance()
+
+        #s = len(x1_y0_z0_polygons)
+        #x1_y0_z0_kd = KDTree(s)
+        #for i, polygon in enumerate(x1_y0_z0_polygons):
+        #    x1_y0_z0_kd.insert(mat * Vector(polygon.center), i)
+        #x1_y0_z0_kd.balance()
+
+        #s = len(x1_y0_z1_polygons)
+        #x1_y0_z1_kd = KDTree(s)
+        #for i, polygon in enumerate(x1_y0_z1_polygons):
+        #    x1_y0_z1_kd.insert(mat * Vector(polygon.center), i)
+        #x1_y0_z1_kd.balance()
+
+        #s = len(x1_y1_z0_polygons)
+        #x1_y1_z0_kd = KDTree(s)
+        #for i, polygon in enumerate(x1_y1_z0_polygons):
+        #    x1_y1_z0_kd.insert(mat * Vector(polygon.center), i)
+        #x1_y1_z0_kd.balance()
+
+        #s = len(x1_y1_z1_polygons)
+        #x1_y1_z1_kd = KDTree(s)
+        #for i, polygon in enumerate(x1_y1_z1_polygons):
+        #    x1_y1_z1_kd.insert(mat * Vector(polygon.center), i)
+        #x1_y1_z1_kd.balance()
+
+        #co_find = (0.0, 0.0, 0.0)
+        #co, index, dist = x0_y0_z0_kd.find(co_find)
+
+
+
+        #co_find = (0.0, 0.0, 0.0)
+        #co, index, dist = x0_y0_z0_kd.find(co_find)
+        
+        #dtheta = 0.1
+        #loop = int(360.0 / dtheta) + 1
+        #cakes = [[] for l in range(loop)]
+        #for polygon in polygons:
+        #    center =  mat * Vector(polygon.center)
+        #    theta = np.arctan2(center.y - ce.y, center.x - ce.x)
+        #    index = int((np.degrees(theta) + 180) / dtheta)
+        #    cakes[index].append(polygon)
+        #    print(index)
+#        kd = KDTree(len(polygons))
+#        for i, polygon in enumerate(polygons):
+#            kd.insert(mat * Vector(polygon.center), i)
+#        kd.balance()
+
         """
             Deciding process of inside points.
         """
-        hand_center = Vector((0, 0, 0))
+        #xs = []
+        #for x in range(rx + 1):
+        #    #hit = False
+        #    pick = self.lerp(ri, le, x * mx)
+        #    u = 0 if pick <= half_x else 1
+        #    for polygon in cake_xs[u]:
+        #        center =  mat * Vector(polygon.center)
+        #        current = Vector((pick, center.y, center.z))
+        #        normal = mat.to_quaternion() * Vector(polygon.normal)
+        #        radius = np.sqrt(polygon.area) * 0.5
+        #        vec = current - center
+        #        coeff = vec.dot(normal) #Projection to center along Normal
+        #        vec -= coeff * normal
+        #        length = vec.length_squared
+        #        #length = vec.length
+        #        #hit = hit or (length < radius and coeff < 0)
+        #        if length < radius and coeff < 0:
+        #            xs.append(x)
+        #            break
+        #    #if hit:
+        #    #    xs.append(x)
+        #ys = []
+        #for y in range(ry + 1):
+        #    #hit = False
+        #    #polygons = []
+        #    pick = self.lerp(fr, ba, y * my)
+        #    v = 0 if pick <= half_y else 1
+        #    for polygon in cake_ys[v]:
+        #        center =  mat * Vector(polygon.center)
+        #        current = Vector((center.x, pick, center.z))
+        #        normal = mat.to_quaternion() * Vector(polygon.normal)
+        #        radius = np.sqrt(polygon.area) * 0.5
+        #        vec = current - center
+        #        coeff = vec.dot(normal) #Projection to center along Normal
+        #        vec -= coeff * normal
+        #        length = vec.length_squared
+        #        #length = vec.length
+        #        #hit = hit or (length < radius and coeff < 0)
+        #        if length < radius and coeff < 0:
+        #            ys.append(y)
+        #            break
+        #    #if hit:
+        #    #    ys.append(y)
+        #zs = []
+        #for z in range(rz + 1):
+        #    #hit = False
+        #    #polygons = []
+        #    pick = self.lerp(bo, to, z * mz)
+        #    w = 0 if pick <= half_z else 1
+        #    for polygon in cake_zs[w]:
+        #        center =  mat * Vector(polygon.center)
+        #        current = Vector((center.x, center.y, pick))
+        #        normal = mat.to_quaternion() * Vector(polygon.normal)
+        #        radius = np.sqrt(polygon.area) * 0.5
+        #        vec = current - center
+        #        coeff = vec.dot(normal) #Projection to center along Normal
+        #        vec -= coeff * normal
+        #        length = vec.length_squared
+        #        #length = vec.length
+        #        #hit = hit or (length < radius and coeff < 0)
+        #        if length < radius and coeff < 0:
+        #            zs.append(z)
+        #            break
+        #    #if hit:
+        #    #    zs.append(z)
+
         for x in range(rx + 1):
             for y in range(ry + 1):
-                for z in range(rz + 1):        
+                for z in range(rz + 1):
                     current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
                     current_length = sys.float_info.max
                     current_height = sys.float_info.max
-                    polygons = []                
-                    if current.x <= half_x:
-                        if current.y <= half_y:
-                            if current.z <= half_z:
-                                polygons.extend(x0_y0_z0_polygons)
-                            else:
-                                polygons.extend(x0_y0_z1_polygons)
-                        else:
-                            if current.z <= half_z:
-                                polygons.extend(x0_y1_z0_polygons)
-                            else:
-                                polygons.extend(x0_y1_z1_polygons)
-                    else:
-                        if current.y <= half_y:
-                            if current.z <= half_z:
-                                polygons.extend(x1_y0_z0_polygons)
-                            else:                
-                                polygons.extend(x1_y0_z1_polygons)
-                        else:
-                            if current.z <= half_z:
-                                polygons.extend(x1_y1_z0_polygons)
-                            else:
-                                polygons.extend(x1_y1_z1_polygons)
+                    #polygons = []
+                    #kd = None
+                    #if current.x <= half_x:
+                    #    if current.y <= half_y:
+                    #        if current.z <= half_z:
+                    #            polygons = x0_y0_z0_polygons
+                    #            kd = x0_y0_z0_kd
+                    #        else:
+                    #            polygons = x0_y0_z1_polygons
+                    #            kd = x0_y0_z1_kd
+                    #    else:
+                    #        if current.z <= half_z:
+                    #            polygons = x0_y1_z0_polygons
+                    #            kd = x0_y1_z0_kd
+                    #        else:
+                    #            polygons = x0_y1_z1_polygons
+                    #            kd = x0_y1_z1_kd
+                    #else:
+                    #    if current.y <= half_y:
+                    #        if current.z <= half_z:
+                    #            polygons = x1_y0_z0_polygons
+                    #            kd = x1_y0_z0_kd
+                    #        else:
+                    #            polygons = x1_y0_z1_polygons
+                    #            kd = x1_y0_z1_kd
+                    #    else:
+                    #        if current.z <= half_z:
+                    #            polygons = x1_y1_z0_polygons
+                    #            kd = x1_y1_z0_kd
+                    #        else:
+                    #            polygons = x1_y1_z1_polygons
+                    #            kd = x1_y1_z1_kd
+
+                    #n = (current - ce).normalized()
+                    #u = int(np.round(n.x * loop)) + loop
+                    #v = int(np.round(n.y * loop)) + loop
+                    #w = int(np.round(n.z * loop)) + loop
+                    #polygons = cakes[w][v][u]
+                    #print("{},{},{}".format(u, v, w))
+
                     min_polygon = None
-                    min_length = sys.float_info.max
-                    for polygon in polygons: # Nearest polygon
-                        center =  mat * Vector(polygon.center)
-                        length = (current - center).length_squared
-                        if length < min_length:
-                            min_polygon = polygon
-                            min_length = length
+
+                    #n = int((current.x - ri) / half_x)
+                    #m = int((current.y - fr) / half_y)
+                    #l = int((current.z - bo) / half_z)
+                    n = 0 if current.x <= half_x else 1
+                    m = 0 if current.y <= half_y else 1
+                    l = 0 if current.z <= half_z else 1
+                    #cakes[z][y][x].append(polygon)
+                    co_find = (current.x, current.y, current.z)
+                    #if kds[l][m][n] is None:
+                    #    continue
+                    #print(kds[l][m][n])
+                    co, index, dist = kds[l][m][n].find(co_find)
+                    #co, index, dist = kd.find(co_find)
+
+#                    location, normal, index, distance = bvhs[l][m][n].find_nearest(co_find)
+
+                    #print("{},{},{},{}".format(l, m, n, index))
+                    #if index is None:                    
+                    #    continue
+                    if index is None:                    
+                        continue
+                    min_polygon = cakes[l][m][n][index]
+                    #min_polygon = polygons[index]
+
+                    #co_find = (current.x, current.y, current.z)
+                    #co, index, dist = kd.find(co_find)
+                    #min_polygon = polygons[index]
+
+                    #min_length = sys.float_info.max
+                    #for polygon in polygons: # Nearest polygon
+                    #    center =  mat * Vector(polygon.center)
+                    #    length = (current - center).length_squared
+                    #    if length < min_length:
+                    #        min_polygon = polygon
+                    #        min_length = length
+
                     if min_polygon is None:                    
                         continue
                     normal = mat.to_quaternion() * Vector(min_polygon.normal)                
@@ -1143,33 +1442,54 @@ class CreateArmature(bpy.types.Operator):
                     vec = current - center
                     coeff = vec.dot(normal) #Projection to center along Normal
                     vec -= coeff * normal
-                    length = vec.length_squared
+                    length = vec.length_squared # This is mistake. But this is good result.
+                    #length = vec.length
                     close = coeff
                     if length < min_length and close < 0:
-                        loc = coeff * normal + center
-                        lx, ly, lz = loc.xyz
-                        u = self.invlerp(lx, ri, le, rx)
-                        v = self.invlerp(ly, fr, ba, ry)
-                        w = self.invlerp(lz, bo, to, rz)
-                        centers.append((u, v, w))
-                        hand_center += loc
-#                        if finger:
-#                            self.debug_point(context, loc)
-        hand_center /= len(centers)
-        #print(hand_center)
+                        #loc = coeff * normal + center
+                        #lx, ly, lz = loc.xyz
+                        #u = self.invlerp(lx, ri, le, rx)
+                        #v = self.invlerp(ly, fr, ba, ry)
+                        #w = self.invlerp(lz, bo, to, rz)
+                        #centers.append((u, v, w)) # Volume thinning
+                        if finger:
+                            loc = coeff * normal + center
+                            lx, ly, lz = loc.xyz
+                            u = self.invlerp(lx, ri, le, rx)
+                            v = self.invlerp(ly, fr, ba, ry)
+                            w = self.invlerp(lz, bo, to, rz)
+                            centers.append((u, v, w)) # Volume thinning
+                        else:
+                            centers.append((x, y, z))
+                    #centers.append((x, y, z))
+                    #print("{},{},{}".format(x, y, z))
+                        #self.debug_point(context, loc)
+                        #self.debug_point(context, current, type="CUBE")
+                        #centers.append((x, y, z))
 
-        """
+                    
+        """        
             Getting process of the nearest point from origin.
-        """    
-        min_dist = sys.float_info.max
-        start = (0, 0, 0)
-        for c in centers:
-            x, y, z = c         
+        """
+        center_kd = KDTree(len(centers))
+        for i, c in enumerate(centers):
+            x, y, z = c
             current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
-            dist = (current - origin).length_squared
-            if dist < min_dist:
-                min_dist = dist
-                start = (x, y, z)
+            center_kd.insert(current.xyz, i)
+        center_kd.balance()
+
+        #min_dist = sys.float_info.max
+        #start = (0, 0, 0)
+        #for c in centers:
+        #    x, y, z = c         
+        #    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
+        #    dist = (current - origin).length_squared
+        #    if dist < min_dist:
+        #        min_dist = dist
+        #        start = (x, y, z)
+        co, index, dist = center_kd.find(origin.xyz)
+        #cx, cy, cz = centers[index]
+        start = centers[index]
         x, y, z = start
         current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
         if not finger:
@@ -1198,6 +1518,16 @@ class CreateArmature(bpy.types.Operator):
                     max_length = length
                     end = (x, y, z)
         sx, sy, sz = start
+
+        def limit_hips(index):
+            stem = (body_top - body_bottom)
+            cx, cy, cz = centers[index]
+            current = Vector((self.lerp(ri, le, cx * mx), self.lerp(fr, ba, cy * my), self.lerp(bo, to, cz * mz)))
+            branch = current - body_bottom
+            if stem.length_squared == 0.0 or branch.length_squared == 0.0:
+                return False
+            return stem.angle(branch) < self.hips_limit_angle
+
         #neck_limit = BRANCH_LIMIT_HIPS
         if bone_type == BONE_TYPE_BODY:
             min_length = sys.float_info.max
@@ -1205,19 +1535,29 @@ class CreateArmature(bpy.types.Operator):
             """
                 Getting process of hips point.
             """        
-            for c in centers:
-                x, y, z = c
-                current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
-                length = (current - body_bottom).length_squared
-                stem = (body_top - body_bottom)
-                branch0 = (current - body_bottom)
-                length = branch0.length_squared            
-                if stem.length_squared == 0.0 or branch0.length_squared == 0.0:
-                    continue            
-                if length < min_length and stem.angle(branch0) < self.hips_limit_angle:
-                    min_length = length
-                    min_loc = current
-            start_loc = Vector((body_bottom.x, body_bottom.y, min_loc.z))
+            #for c in centers:
+            #    x, y, z = c
+            #    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
+            #    length = (current - body_bottom).length_squared
+            #    stem = (body_top - body_bottom)
+            #    branch0 = (current - body_bottom)
+            #    length = branch0.length_squared            
+            #    if stem.length_squared == 0.0 or branch0.length_squared == 0.0:
+            #        continue            
+            #    if length < min_length and stem.angle(branch0) < self.hips_limit_angle:
+            #        min_length = length
+            #        min_loc = current            
+            co, index, dist = center_kd.find(origin.xyz, filter=limit_hips)
+            #start = centers[index]
+            #start_loc = Vector((body_bottom.x, body_bottom.y, min_loc.z))
+            #cx, cy, cz =  centers[index]
+            #print(index)
+            #print(co)
+            if co is None:
+                start_loc = body_bottom
+            else:
+                start_loc = Vector((body_bottom.x, body_bottom.y, Vector(co).z))
+            #start_loc = body_bottom
         else:
             start_loc = Vector((self.lerp(ri, le, sx * mx), self.lerp(fr, ba, sy * my), self.lerp(bo, to, sz * mz)))
         if not finger:
@@ -1230,24 +1570,31 @@ class CreateArmature(bpy.types.Operator):
         """
             Getting process of center and neck point.
         """                
-        m = (start_loc + end_loc) * 0.5
-        min_length = sys.float_info.max    
-        center_loc = start_loc
-    
-        n = start_loc.lerp(end_loc, 0.75)
-        neck_length = sys.float_info.max
-        neck_loc = start_loc
-        for center in centers:
-            cx, cy, cz = center
-            current = Vector((self.lerp(ri, le, cx * mx), self.lerp(fr, ba, cy * my), self.lerp(bo, to, cz * mz)))
-            m_length = (current - m).length_squared
-            n_length = (current - n).length_squared
-            if m_length < min_length:
-                center_loc = current
-                min_length = m_length
-            if n_length < neck_length:
-                neck_loc = current
-                neck_length = n_length
+        #m = (start_loc + end_loc) * 0.5
+        #min_length = sys.float_info.max    
+        #center_loc = start_loc
+        #
+        #n = start_loc.lerp(end_loc, 0.75)
+        #neck_length = sys.float_info.max
+        #neck_loc = start_loc
+        #for center in centers:
+        #    cx, cy, cz = center
+        #    current = Vector((self.lerp(ri, le, cx * mx), self.lerp(fr, ba, cy * my), self.lerp(bo, to, cz * mz)))
+        #    m_length = (current - m).length_squared
+        #    n_length = (current - n).length_squared
+        #    if m_length < min_length:
+        #        center_loc = current
+        #        min_length = m_length
+        #    if n_length < neck_length:
+        #        neck_loc = current
+        #        neck_length = n_length
+        #
+        co, index, dist = center_kd.find(start_loc.lerp(end_loc, 0.5).xyz)
+        #cx, cy, cz = centers[index]
+        center_loc = co
+        co, index, dist = center_kd.find(start_loc.lerp(end_loc, 0.75).xyz)
+        #cx, cy, cz = centers[index]
+        neck_loc = co
         if bone_type == BONE_TYPE_BODY:        
             hips_loc = start_loc.lerp(end_loc, 0.25)
             bone.tail = hips_loc
@@ -1580,43 +1927,67 @@ class CreateArmature(bpy.types.Operator):
                     if max_length < length:
                         max_length = length
                         max_joint = joint
-                e = max_joint.lerp(tip, 0.5)
-                n = max_joint.lerp(tip, 0.75)
-                t = max_joint.lerp(tip, 0.875)
-                min_e = Vector((0, 0, 0))
-                min_n = Vector((0, 0, 0))
-                min_t = Vector((0, 0, 0))
-                min_e_length = sys.float_info.max
-                min_n_length = sys.float_info.max
-                min_t_length = sys.float_info.max
-                for center in centers:
-                    x, y, z = center
-                    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
-                    e_length = (current - e).length_squared
-                    n_length = (current - n).length_squared
-                    t_length = (current - t).length_squared
-                    if e_length < min_e_length:
-                        min_e_length = e_length
-                        min_e = current
-                    if n_length < min_n_length:
-                        min_n_length = n_length
-                        min_n = current
-                    if t_length < min_t_length:
-                        min_t_length = t_length
-                        min_t = current
-
+                #e = max_joint.lerp(tip, 0.5)
+                #n = max_joint.lerp(tip, 0.75)
+                #t = max_joint.lerp(tip, 0.875)
+                #min_e = Vector((0, 0, 0))
+                #min_n = Vector((0, 0, 0))
+                #min_t = Vector((0, 0, 0))
+                #min_e_length = sys.float_info.max
+                #min_n_length = sys.float_info.max
+                #min_t_length = sys.float_info.max
+                #for center in centers:
+                #    x, y, z = center
+                #    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
+                #    e_length = (current - e).length_squared
+                #    n_length = (current - n).length_squared
+                #    t_length = (current - t).length_squared
+                #    if e_length < min_e_length:
+                #        min_e_length = e_length
+                #        min_e = current
+                #    if n_length < min_n_length:
+                #        min_n_length = n_length
+                #        min_n = current
+                #    if t_length < min_t_length:
+                #        min_t_length = t_length
+                #        min_t = current
+                """
+                    Elbow
+                """
+                co, index, dist = center_kd.find(max_joint.lerp(tip, 0.5).xyz)
+                #cx, cy, cz = centers[index]
+                min_e = co
+                """
+                    Hand neck
+                """
+                co, index, dist = center_kd.find(max_joint.lerp(tip, 0.75).xyz)
+                #cx, cy, cz = centers[index]
+                min_n = co
+                """
+                    Finger tip
+                """
+                co, index, dist = center_kd.find(max_joint.lerp(tip, 0.875).xyz)
+                #cx, cy, cz = centers[index]
+                min_t = co
+                """
+                    Shoulder
+                """
                 vec = (max_joint - min_e).normalized()
                 coeff = (parent.tail - max_joint).dot(vec)
                 s = vec * coeff * 0.5 + max_joint
-                min_s = Vector((0, 0, 0))
-                min_s_length = sys.float_info.max
-                for center in centers:
-                    x, y, z = center
-                    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
-                    s_length = (current - s).length_squared            
-                    if s_length < min_s_length:
-                        min_s_length = s_length
-                        min_s = current
+                #min_s = Vector((0, 0, 0))
+                #min_s_length = sys.float_info.max
+                #for center in centers:
+                #    x, y, z = center
+                #    current = Vector((self.lerp(ri, le, x * mx), self.lerp(fr, ba, y * my), self.lerp(bo, to, z * mz)))
+                #    s_length = (current - s).length_squared            
+                #    if s_length < min_s_length:
+                #        min_s_length = s_length
+                #        min_s = current
+                co, index, dist = center_kd.find(s.xyz)
+                #cx, cy, cz = centers[index]
+                min_s = co
+
                 if bone_type == BONE_TYPE_HEAD:
                     name = "bone"
                 elif bone_type == BONE_TYPE_ARM_LEFT:
